@@ -1,2 +1,2 @@
-# -BMKE
-Can generate BMK ticker sheets from hydraulic schematic
+# BMKE
+Can generate BMK sticker sheets from hydraulic schematic
