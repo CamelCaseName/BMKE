@@ -46,6 +46,14 @@ reader.Close();
 List<string> lines = [.. text.ToString().Split('\n')];
 HashSet<string> BMKs = new(lines.Count / 2);
 
+//P for pressure lines
+//G for pumps
+//T for tank return lines
+//L for leakage return lines
+//M for cylinders/motors
+//N for NG valve size
+char[] disallowedChars = ['P', 'G', 'T', 'L', 'M', 'N'];
+
 for (int i = 0; i < lines.Count; i++)
 {
     if (lines[i].Length < 3)
@@ -53,29 +61,52 @@ for (int i = 0; i < lines.Count; i++)
         continue;
     }
     var span = lines[i].AsSpan().Trim();
-    if (!char.IsAsciiLetterUpper(span[0])
-        || !char.IsAsciiDigit(span[1]))
+    if (disallowedChars.Contains(span[0]))
     {
         continue;
     }
-    if (span[0] is 'P' or 'G' or 'T' or 'L' or 'M')
+
+    if ((!char.IsAsciiLetterUpper(span[0])
+        || !char.IsAsciiDigit(span[1]))
+        && (!char.IsAsciiLetterUpper(span[0])
+        || !char.IsAsciiLetterUpper(span[1])
+        || !char.IsAsciiDigit(span[2])))
+    {
+        continue;
+    }
+
+    //remove KM machine description
+    if (span[0] == 'K' && span[1] == 'M')
     {
         continue;
     }
 
     bool broken = false;
-    foreach (var c in span[2..])
+    //split lines where we have miltiple in one, either with space or without
+    for (int ci = 2; ci < span[2..].Length; ci++)
     {
-        if (!char.IsAsciiLetterOrDigit(c) && c is not ('/' or ' '))
-        {
-            broken = true;
-            break;
-        }
-        else if (c == ' ')
+        char c = span[ci]; 
+        if (c == ' ')
         {
             string temp = lines[i];
             lines.RemoveAt(i);
             lines.InsertRange(i, temp.Split(' '));
+            break;
+        }
+        else if (!char.IsAsciiDigit(c) && c is not ('/' or ' '))
+        {
+            if (char.IsAsciiLetterUpper(c))
+            {
+                var temp = lines[i].AsSpan();
+                lines.RemoveAt(i);
+                lines.InsertRange(i, [temp[..ci].ToString(), temp[ci..].ToString()]);
+            }
+            else
+            {
+
+                broken = true;
+            }
+            break;
         }
     }
     if (!broken)
