@@ -1,8 +1,7 @@
 {
   "profiles": {
     "BMKE": {
-      "commandName": "Project",
-      "commandLineArgs": "\"%userprofile%\\Downloads\\630195 HPlan.pdf\""
+      "commandName": "Project"
     }
   }
 }
