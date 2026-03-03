@@ -58,6 +58,7 @@ document.Close();
 //    Console.WriteLine($"{bmk}");
 //}
 Console.WriteLine("Done! Exported BMK to " + outputPath);
+Console.WriteLine("Hit any key to exit.");
 
 _ = Console.ReadLine();
 return;
