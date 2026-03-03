@@ -92,13 +92,14 @@ HashSet<string> ExtractBMK(string pdfPath)
     List<string> lines = [.. text.ToString().Split('\n')];
     HashSet<string> BMKs = new(lines.Count / 2);
 
+    //A for some lines
     //P for pressure lines
     //G for pumps
     //T for tank return lines
     //L for leakage return lines
     //M for cylinders/motors
     //N for NG valve size
-    char[] disallowedChars = ['P', 'G', 'T', 'L', 'M', 'N'];
+    char[] disallowedChars = ['A', 'P', 'G', 'T', 'L', 'M', 'N'];
 
     for (int i = 0; i < lines.Count; i++)
     {
