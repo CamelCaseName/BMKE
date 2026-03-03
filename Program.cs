@@ -1,13 +1,26 @@
 ﻿using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
+using iText.Layout;
+using iText.Layout.Element;
+using iText.Layout.Renderer;
 using Newtonsoft.Json;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 
 JsonConvert.DefaultSettings = () => new JsonSerializerSettings { MaxDepth = 128 };
 string? pdfPath = string.Empty;
+string orderNumber = string.Empty;
+int cellheight = 9;
+int cellWidth = 37;
 
-//todo allow re-entry of file path
+
+//##################################################################
+//    script    
+//##################################################################
+
+
 pdfPath = GetPathFromArgs(args);
 pdfPath ??= GetPathFromConsole();
 if (pdfPath is null)
@@ -17,19 +30,49 @@ if (pdfPath is null)
 
 Console.WriteLine("PDF read, outputting special BMK:\n");
 
-HashSet<string> BMKs = ExtractBMK(pdfPath);
+var BMKs = ExtractBMK(pdfPath).ToImmutableSortedSet();
 
-foreach (var bmk in BMKs)
-{
-    Console.WriteLine($"{bmk}");
-}
+//todo also extract bmk for the other pages on a per-page basis, and then compare via material number against the complete block drawing
 
+//todo generate drawing pdf here
 //todo build into csv, or excel or whatever?
+
+string outputPath = Path.Combine(Path.GetDirectoryName(pdfPath) ?? string.Empty, orderNumber + "-Hydraulik-BMK.pdf");
+PdfWriter writer = new(outputPath);
+PdfDocument pdf = new(writer);
+//A4 landscape
+pdf.SetDefaultPageSize(iText.Kernel.Geom.PageSize.A4.Rotate());
+
+var page = pdf.AddNewPage();
+Document document = new(pdf);
+document.Add(new Paragraph("BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [" + orderNumber + "]"));
+
+document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen"));
+
+AddBMKAsTable(BMKs, pdf, document, page);
+
+document.Close();
+
+//foreach (var bmk in BMKs)
+//{
+//    Console.WriteLine($"{bmk}");
+//}
+Console.WriteLine("Done! Exported BMK to " + outputPath);
 
 _ = Console.ReadLine();
 return;
 
-static HashSet<string> ExtractBMK(string pdfPath)
+
+//##################################################################
+//    methods
+//##################################################################
+
+static float mmToPt(float mm)
+{
+    return mm / 25.4f * 72;
+}
+
+HashSet<string> ExtractBMK(string pdfPath)
 {
     PdfReader reader = new(pdfPath);
     PdfDocument pdf = new(reader);
@@ -63,6 +106,7 @@ static HashSet<string> ExtractBMK(string pdfPath)
             continue;
         }
         var span = lines[i].AsSpan().Trim();
+
         if (disallowedChars.Contains(span[0]))
         {
             continue;
@@ -74,6 +118,11 @@ static HashSet<string> ExtractBMK(string pdfPath)
             || !char.IsAsciiLetterUpper(span[1])
             || !char.IsAsciiDigit(span[2])))
         {
+            if (orderNumber == string.Empty && span.Contains("Blatt".AsSpan(), StringComparison.InvariantCulture))
+            {
+                orderNumber = span[..6].ToString();
+                Console.WriteLine("Order number " + orderNumber + " found");
+            }
             continue;
         }
 
@@ -315,4 +364,74 @@ static void UpdateDirectoryCache(StringBuilder builder, ref List<string> data)
         }
     }
     catch { }
+}
+
+void AddBMKAsTable(ImmutableSortedSet<string> BMKs, PdfDocument pdf, Document document, PdfPage page)
+{
+    int Colcount = 7;
+    int Rowcount = 14;
+    int counter = 0;
+    int pageNumber = 1;
+    int tableLeft = 30;
+    int tableBottom = 70;
+    Table bmkTable = new(Colcount);
+    float PageWidth = page.GetPageSizeWithRotation().GetWidth();
+    foreach (string key in BMKs)
+    {
+        counter++;
+        Cell data = new();
+        //1mm = 72pt
+        data.SetPadding(0);
+        data.SetMargin(0);
+        data.SetHeight(mmToPt(cellheight));
+        data.SetMinHeight(mmToPt(cellheight));
+        data.SetMaxHeight(mmToPt(cellheight));
+        data.SetWidth(mmToPt(cellWidth));
+        data.SetMinWidth(mmToPt(cellWidth));
+        data.SetMaxWidth(mmToPt(cellWidth));
+        data.Add(new Paragraph(key));
+        data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
+        data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
+        data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
+        bmkTable.AddCell(data);
+
+        if (counter >= Rowcount * Colcount)
+        {
+            counter = 0;
+            FinishTable(1);
+            pageNumber++;
+            _ = pdf.AddNewPage();
+            page = pdf.GetPage(pageNumber);
+            document.Add(new AreaBreak());
+            bmkTable = new(Colcount);
+        }
+    }
+
+    FinishTable(0);
+
+    //set to 1 for full last row
+    void FinishTable(int subtract)
+    {
+        var canvas = new PdfCanvas(page);
+        float stroke = bmkTable.GetStrokeWidth() ?? 1;
+        float width = bmkTable.GetNumberOfColumns() * mmToPt(cellWidth + stroke);
+        float height = (bmkTable.GetNumberOfRows() - subtract) * mmToPt(cellheight + stroke);
+
+        bmkTable.SetMargin(0);
+        bmkTable.SetPadding(0);
+        bmkTable.SetBorder(null);
+        bmkTable.SetFixedPosition(tableLeft, tableBottom, width);
+        bmkTable.SetHeight(height);
+
+        canvas.MoveTo(tableLeft, tableBottom - 10);
+        canvas.LineTo(width + tableLeft, tableBottom - 10);
+        canvas.MoveTo(width + tableLeft + 10, tableBottom);
+        canvas.LineTo(width + tableLeft + 10, height + tableBottom);
+
+        document.ShowTextAligned((bmkTable.GetNumberOfColumns() * cellWidth).ToString(), width / 2 + tableLeft, tableBottom - 30, iText.Layout.Properties.TextAlignment.CENTER);
+        document.ShowTextAligned((bmkTable.GetNumberOfRows() * cellheight).ToString(), width + tableLeft + 30, height / 2 + tableBottom, iText.Layout.Properties.TextAlignment.CENTER, MathF.Tau / 4);
+        document.ShowTextAligned("Page: " + pageNumber, PageWidth - 15, 10, iText.Layout.Properties.TextAlignment.RIGHT);
+        document.Add(bmkTable);
+        document.Flush();
+    }
 }
