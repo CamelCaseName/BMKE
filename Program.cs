@@ -1,63 +1,72 @@
 ﻿using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
+using iText.Kernel.Validation.Context;
 using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Renderer;
 using Newtonsoft.Json;
+using System.Collections;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 JsonConvert.DefaultSettings = () => new JsonSerializerSettings { MaxDepth = 128 };
 string? pdfPath = string.Empty;
+List<int> BMKPerPage = [];
 string orderNumber = string.Empty;
 int cellheight = 9;
 int cellWidth = 37;
+int Colcount = 7;
+int Rowcount = 14;
+bool flagP = false;
+bool flagU = false; //done
+bool flagC = false; //todo last
+bool flagG = false;
+bool flagS = false; //done
 
 
 //##################################################################
 //    script    
 //##################################################################
-
-
-pdfPath = GetPathFromArgs(args);
-pdfPath ??= GetPathFromConsole();
-if (pdfPath is null)
+if (args.Length == 0)
 {
-    throw new NullReferenceException("issue in path generation, returned null!");
+    PutHelp();
 }
+pdfPath = GetPathFromArgs(args);
+if (pdfPath is not null)
+{
+    GetFlagsFromArgs(args);
+}
+else
+{
+    pdfPath = GetAllFromConsole();
+}
+ArgumentNullException.ThrowIfNull(pdfPath, nameof(pdfPath));
 
 Console.WriteLine("PDF read, outputting special BMK:\n");
 
-var BMKs = ExtractBMK(pdfPath).ToImmutableSortedSet();
+IList<string> BMKs = ExtractBMK(pdfPath);
+if (!flagU)
+{
+    BMKs = BMKs.ToImmutableSortedSet();
+}
 
 //todo also extract bmk for the other pages on a per-page basis, and then compare via material number against the complete block drawing
 
-//todo generate drawing pdf here
 //todo build into csv, or excel or whatever?
+string outputPath = string.Empty;
 
-string outputPath = Path.Combine(Path.GetDirectoryName(pdfPath) ?? string.Empty, orderNumber + "-Hydraulik-BMK.pdf");
-PdfWriter writer = new(outputPath);
-PdfDocument pdf = new(writer);
-//A4 landscape
-pdf.SetDefaultPageSize(iText.Kernel.Geom.PageSize.A4.Rotate());
+outputPath = ExportToCSV(pdfPath, BMKs);
 
-var page = pdf.AddNewPage();
-Document document = new(pdf);
-document.Add(new Paragraph("BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [" + orderNumber + "]"));
+AnnounceWrittenFile(flagS, outputPath);
+if (flagP)
+{
+    outputPath = ExportToPdf(pdfPath, orderNumber, cellheight, cellWidth, BMKs);
+    AnnounceWrittenFile(flagS, outputPath);
+}
 
-document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen"));
-
-AddBMKAsTable(BMKs, pdf, document, page);
-
-document.Close();
-
-//foreach (var bmk in BMKs)
-//{
-//    Console.WriteLine($"{bmk}");
-//}
-Console.WriteLine("Done! Exported BMK to " + outputPath);
 Console.WriteLine("Hit any key to exit.");
 
 _ = Console.ReadLine();
@@ -73,106 +82,65 @@ static float mmToPt(float mm)
     return mm / 25.4f * 72;
 }
 
-HashSet<string> ExtractBMK(string pdfPath)
+void PutHelp()
 {
-    PdfReader reader = new(pdfPath);
-    PdfDocument pdf = new(reader);
-    StringBuilder text = new();
-    for (int page = 1; page <= pdf.GetNumberOfPages(); page++)
+    Console.WriteLine(
+"""
+#### BMKE - Tool to generate BMK from a KraussMaffei Hydraulic schematic for all special additions on the platens, fixed and moving####
+A csv with all BMK is generated at the same path as the hydraulic schematic every time.
+
+When starting via command line, you can provide the path to the hydraulic schematic as the first argument.
+The following flags are also available:
+    -p  | generate a pdf version of the resulting BMK directly, alongside the csv.
+    -g  | group BMK by schematic page.
+    -s  | appends a page to the pdf/continues the csv instead of splitting into a new file once a the table on the current page is full.
+    -u  | unsorted, does not alphabetically sort the valve names.
+    -c  | output cascade and core pull valve stacks as one single sticker, and not all as single stickers.
+    -h  | outputs this help text.
+"""
+        );
+}
+
+void GetFlagsFromArgs(string[] args)
+{
+    flagP = false;
+    flagG = false;
+    flagS = false;
+    flagU = false;
+    flagC = false;
+    foreach (string arg in args)
     {
-        //todo maybe lookup material number against sticker list
-        var pageText = PdfTextExtractor.GetTextFromPage(pdf.GetPage(page));
-        if (pageText.Contains("INHALT BLOCKABRUF"))
+        if (arg.Length == 2 && arg[0] == '-')
         {
-            text.Append(pageText);
+            switch (arg[1])
+            {
+                case 'p':
+                case 'P':
+                    flagP = true;
+                    continue;
+                case 'g':
+                case 'G':
+                    flagG = true;
+                    continue;
+                case 's':
+                case 'S':
+                    flagS = true;
+                    continue;
+                case 'u':
+                case 'U':
+                    flagU = true;
+                    continue;
+                case 'c':
+                case 'C':
+                    flagC = true;
+                    continue;
+                case 'h':
+                case 'H':
+                    PutHelp();
+                    continue;
+            }
         }
     }
-    reader.Close();
-
-    List<string> lines = [.. text.ToString().Split('\n')];
-    HashSet<string> BMKs = new(lines.Count / 2);
-
-    //A for some lines
-    //P for pressure lines
-    //G for pumps
-    //T for tank return lines
-    //L for leakage return lines
-    //M for cylinders/motors
-    //N for NG valve size
-    char[] disallowedChars = ['A', 'P', 'G', 'T', 'L', 'M', 'N'];
-
-    for (int i = 0; i < lines.Count; i++)
-    {
-        if (lines[i].Length < 3)
-        {
-            continue;
-        }
-        var span = lines[i].AsSpan().Trim();
-
-        if (disallowedChars.Contains(span[0]))
-        {
-            continue;
-        }
-
-        if ((!char.IsAsciiLetterUpper(span[0])
-            || !char.IsAsciiDigit(span[1]))
-            && (!char.IsAsciiLetterUpper(span[0])
-            || !char.IsAsciiLetterUpper(span[1])
-            || !char.IsAsciiDigit(span[2])))
-        {
-            if (orderNumber == string.Empty && span.Contains("Blatt".AsSpan(), StringComparison.InvariantCulture))
-            {
-                orderNumber = span[..6].ToString();
-                Console.WriteLine("Order number " + orderNumber + " found");
-            }
-            continue;
-        }
-
-        //remove KM machine description
-        if (span[0] == 'K' && span[1] == 'M')
-        {
-            continue;
-        }
-
-        bool broken = false;
-        //split lines where we have miltiple in one, either with space or without
-        for (int ci = 2; ci < span[2..].Length; ci++)
-        {
-            char c = span[ci];
-            if (c == ' ')
-            {
-                string temp = lines[i];
-                lines.RemoveAt(i);
-                lines.InsertRange(i, temp.Split(' '));
-                break;
-            }
-            else if (!char.IsAsciiDigit(c) && c is not ('/' or ' '))
-            {
-                if (char.IsAsciiLetterUpper(c))
-                {
-                    var temp = lines[i].AsSpan();
-                    lines.RemoveAt(i);
-                    lines.InsertRange(i, [temp[..ci].ToString(), temp[ci..].ToString()]);
-                }
-                else
-                {
-
-                    broken = true;
-                }
-                break;
-            }
-        }
-        if (!broken)
-        {
-            try
-            {
-                BMKs.Add(lines[i].Trim().Trim("/").ToString());
-            }
-            catch { }
-        }
-    }
-
-    return BMKs;
 }
 
 static string? GetPathFromArgs(string[] args)
@@ -189,7 +157,7 @@ static string? GetPathFromArgs(string[] args)
     return args[0];
 }
 
-static string? GetPathFromConsole()
+static string? GetAllFromConsole()
 {
     while (true)
     {
@@ -227,6 +195,7 @@ static string? GetPathFromConsole()
     }
 }
 
+#region fileBrowser
 // https://stackoverflow.com/a/8946847/1188513
 static void ClearCurrentLine()
 {
@@ -367,11 +336,112 @@ static void UpdateDirectoryCache(StringBuilder builder, ref List<string> data)
     }
     catch { }
 }
+#endregion fileBrowser
 
-void AddBMKAsTable(ImmutableSortedSet<string> BMKs, PdfDocument pdf, Document document, PdfPage page)
+IList<string> ExtractBMK(string pdfPath)
 {
-    int Colcount = 7;
-    int Rowcount = 14;
+    PdfReader reader = new(pdfPath);
+    PdfDocument pdf = new(reader);
+    StringBuilder text = new();
+    for (int page = 1; page <= pdf.GetNumberOfPages(); page++)
+    {
+        //todo maybe lookup material number against sticker list
+        var pageText = PdfTextExtractor.GetTextFromPage(pdf.GetPage(page));
+        if (pageText.Contains("INHALT BLOCKABRUF"))
+        {
+            text.Append(pageText);
+        }
+    }
+    reader.Close();
+
+    List<string> lines = [.. text.ToString().Split('\n')];
+    HashSet<string> BMKs = new(lines.Count / 2);
+
+    //A for some lines
+    //P for pressure lines
+    //G for pumps
+    //T for tank return lines
+    //L for leakage return lines
+    //M for cylinders/motors
+    //N for NG valve size
+    char[] disallowedChars = ['A', 'P', 'G', 'T', 'L', 'M', 'N'];
+
+    for (int i = 0; i < lines.Count; i++)
+    {
+        if (lines[i].Length < 3)
+        {
+            continue;
+        }
+        var span = lines[i].AsSpan().Trim();
+
+        if (disallowedChars.Contains(span[0]))
+        {
+            continue;
+        }
+
+        if ((!char.IsAsciiLetterUpper(span[0])
+            || !char.IsAsciiDigit(span[1]))
+            && (!char.IsAsciiLetterUpper(span[0])
+            || !char.IsAsciiLetterUpper(span[1])
+            || !char.IsAsciiDigit(span[2])))
+        {
+            if (orderNumber == string.Empty && span.Contains("Blatt".AsSpan(), StringComparison.InvariantCulture))
+            {
+                orderNumber = span[..6].ToString();
+                Console.WriteLine("Order number " + orderNumber + " found");
+            }
+            continue;
+        }
+
+        //remove KM machine description
+        if (span[0] == 'K' && span[1] == 'M')
+        {
+            continue;
+        }
+
+        bool broken = false;
+        //split lines where we have miltiple in one, either with space or without
+        for (int ci = 2; ci < span[2..].Length; ci++)
+        {
+            char c = span[ci];
+            if (c == ' ')
+            {
+                string temp = lines[i];
+                lines.RemoveAt(i);
+                lines.InsertRange(i, temp.Split(' '));
+                break;
+            }
+            else if (!char.IsAsciiDigit(c) && c is not ('/' or ' '))
+            {
+                if (char.IsAsciiLetterUpper(c))
+                {
+                    var temp = lines[i].AsSpan();
+                    lines.RemoveAt(i);
+                    lines.InsertRange(i, [temp[..ci].ToString(), temp[ci..].ToString()]);
+                }
+                else
+                {
+
+                    broken = true;
+                }
+                break;
+            }
+        }
+        if (!broken)
+        {
+            try
+            {
+                BMKs.Add(lines[i].Trim().Trim("/").ToString());
+            }
+            catch { }
+        }
+    }
+
+    return BMKs.ToImmutableList();
+}
+
+void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document, PdfPage page)
+{
     int counter = 0;
     int pageNumber = 1;
     int tableLeft = 30;
@@ -381,25 +451,9 @@ void AddBMKAsTable(ImmutableSortedSet<string> BMKs, PdfDocument pdf, Document do
     foreach (string key in BMKs)
     {
         counter++;
-        Cell data = new();
-        //1mm = 72pt
-        data.SetPadding(0);
-        data.SetMargin(0);
-        data.SetHeight(mmToPt(cellheight));
-        data.SetMinHeight(mmToPt(cellheight));
-        data.SetMaxHeight(mmToPt(cellheight));
-        data.SetWidth(mmToPt(cellWidth));
-        data.SetMinWidth(mmToPt(cellWidth));
-        data.SetMaxWidth(mmToPt(cellWidth));
-        data.Add(new Paragraph(key));
-        data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
-        data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
-        data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
-        bmkTable.AddCell(data);
-
-        if (counter >= Rowcount * Colcount)
+        if (counter > Rowcount * Colcount)
         {
-            counter = 0;
+            counter = 1;
             FinishTable(1);
             pageNumber++;
             _ = pdf.AddNewPage();
@@ -407,6 +461,12 @@ void AddBMKAsTable(ImmutableSortedSet<string> BMKs, PdfDocument pdf, Document do
             document.Add(new AreaBreak());
             bmkTable = new(Colcount);
         }
+
+        Cell data = new();
+        //1mm = 72pt
+        SetUpCell(cellheight, cellWidth, key, data);
+        bmkTable.AddCell(data);
+
     }
 
     FinishTable(0);
@@ -432,8 +492,108 @@ void AddBMKAsTable(ImmutableSortedSet<string> BMKs, PdfDocument pdf, Document do
 
         document.ShowTextAligned((bmkTable.GetNumberOfColumns() * cellWidth).ToString(), width / 2 + tableLeft, tableBottom - 30, iText.Layout.Properties.TextAlignment.CENTER);
         document.ShowTextAligned((bmkTable.GetNumberOfRows() * cellheight).ToString(), width + tableLeft + 30, height / 2 + tableBottom, iText.Layout.Properties.TextAlignment.CENTER, MathF.Tau / 4);
-        document.ShowTextAligned("Page: " + pageNumber, PageWidth - 15, 10, iText.Layout.Properties.TextAlignment.RIGHT);
+        document.ShowTextAligned("Seite: " + pageNumber, PageWidth - 15, 10, iText.Layout.Properties.TextAlignment.RIGHT);
         document.Add(bmkTable);
         document.Flush();
     }
+
+    void SetUpCell(int cellheight, int cellWidth, string key, Cell data)
+    {
+        data.SetPadding(0);
+        data.SetMargin(0);
+        data.SetHeight(mmToPt(cellheight));
+        data.SetMinHeight(mmToPt(cellheight));
+        data.SetMaxHeight(mmToPt(cellheight));
+        data.SetWidth(mmToPt(cellWidth));
+        data.SetMinWidth(mmToPt(cellWidth));
+        data.SetMaxWidth(mmToPt(cellWidth));
+        data.Add(new Paragraph(key));
+        data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
+        data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
+        data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
+    }
+}
+
+string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, IList<string> BMKs)
+{
+    string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
+    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK.pdf");
+    if (flagS)
+    {
+        SetUpPage(0, 0, out PdfDocument pdf, out PdfPage page, out Document document);
+        AddBMKAsTable(BMKs, pdf, document, page);
+        document.Close();
+    }
+    else
+    {
+        int pageCount = (int)MathF.Ceiling((float)BMKs.Count / ((float)Rowcount * (float)Colcount));
+        for (int i = 0; i < pageCount; i++)
+        {
+            var BMKRange = new List<string>(Rowcount * Colcount);
+            for (int j = i * Rowcount * Colcount; j < MathF.Min(BMKs.Count, (i + 1) * Rowcount * Colcount); j++)
+            {
+                BMKRange.Add(BMKs[j]);
+            }
+            SetUpPage(i + 1, pageCount, out PdfDocument pdf, out PdfPage page, out Document document);
+            AddBMKAsTable(BMKRange, pdf, document, page);
+            document.Close();
+            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{i + 1}.pdf");
+        }
+        //undo counter increase for last one. stupid but easy fix
+        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pageCount - 1}.pdf");
+    }
+    return outputPath;
+
+    void SetUpPage(int pageNumber, int pageCount, out PdfDocument pdf, out PdfPage page, out Document document)
+    {
+        PdfWriter writer = new(outputPath);
+        pdf = new(writer);
+        //A4 landscape
+        pdf.SetDefaultPageSize(iText.Kernel.Geom.PageSize.A4.Rotate());
+        page = pdf.AddNewPage();
+        document = new(pdf);
+        document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(pageNumber > 0 ? $"{{Seite {pageNumber}/{pageCount}}}" : string.Empty)}"));
+        document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen"));
+    }
+}
+
+string ExportToCSV(string pdfPath, IList<string> bMKs)
+{
+    string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
+    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK.csv");
+    StringBuilder sb = new();
+    int counter = 0;
+    int fileCounter = 1;
+    foreach (string key in BMKs)
+    {
+        counter++;
+
+        sb.Append(key + ",");
+
+        if (!flagS && counter >= Rowcount * Colcount)
+        {
+            counter = 0;
+            File.WriteAllText(outputPath, sb.ToString());
+            sb.Clear();
+
+            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
+        }
+        if (counter % Colcount == 0 && counter > 0)
+        {
+            sb.Append('\n');
+        }
+    }
+    File.WriteAllText(outputPath, sb.ToString());
+    sb.Clear();
+    return outputPath;
+}
+
+static void AnnounceWrittenFile(bool flagS, string outputPath)
+{
+    Console.Write($"Done! Exported BMK to {outputPath}");
+    if (!flagS)
+    {
+        Console.Write(" (last file)");
+    }
+    Console.Write("\n");
 }
