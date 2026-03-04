@@ -117,22 +117,27 @@ void GetFlagsFromArgs(string[] args)
                 case 'p':
                 case 'P':
                     flagP = true;
+                    Console.WriteLine("Pdf generation turned on");
                     continue;
                 case 'g':
                 case 'G':
                     flagG = true;
+                    Console.WriteLine("Grouping per page turned on");
                     continue;
                 case 's':
                 case 'S':
                     flagS = true;
+                    Console.WriteLine("Output to single file");
                     continue;
                 case 'u':
                 case 'U':
                     flagU = true;
+                    Console.WriteLine("Sorting turned off");
                     continue;
                 case 'c':
                 case 'C':
                     flagC = true;
+                    Console.WriteLine("Cascades and so on will be bundled");
                     continue;
                 case 'h':
                 case 'H':
@@ -157,7 +162,7 @@ static string? GetPathFromArgs(string[] args)
     return args[0];
 }
 
-static string? GetAllFromConsole()
+string? GetAllFromConsole()
 {
     while (true)
     {
@@ -190,6 +195,18 @@ static string? GetAllFromConsole()
         if (CheckFileIsValid(candidate))
         {
             Console.SetCursorPosition(0, Console.GetCursorPosition().Top + 1);
+            //now ask for flags
+            Console.WriteLine("Do you want to set flags? [y] for yes, [enter] or [n] for no");
+            if (Console.ReadKey().KeyChar == 'y')
+            {
+                Console.WriteLine(string.Empty);
+                Console.WriteLine("you can now enter the flags you want and then hit enter, for example: -s -u");
+                var flags = Console.ReadLine();
+                if (flags?.Length >= 2)
+                {
+                    GetFlagsFromArgs(flags.Split(' '));
+                }
+            }
             return candidate;
         }
     }
