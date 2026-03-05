@@ -56,6 +56,8 @@ if (flagC)
 
 //todo add material number per page into file name (and pdf document)
 
+//todo change pdf font to isofont
+
 string outputPath = ExportToCSV(pdfPath, BMKs);
 AnnounceWrittenFile(flagS, outputPath);
 if (flagP)
