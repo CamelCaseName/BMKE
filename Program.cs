@@ -42,7 +42,7 @@ else
 }
 ArgumentNullException.ThrowIfNull(pdfPath, nameof(pdfPath));
 
-Console.WriteLine("PDF read, outputting special BMK:\n");
+Console.WriteLine("Hydraulic schematic read, outputting special BMK:\n");
 
 var BMKs = ExtractBMK(pdfPath);
 BMKs = Sort(BMKs);
@@ -200,7 +200,7 @@ string? GetAllFromConsole()
             if (Console.ReadKey().KeyChar == 'y')
             {
                 Console.WriteLine(string.Empty);
-                Console.WriteLine("you can now enter the flags you want and then hit enter, for example: -s -u");
+                Console.WriteLine("You can now enter the flags you want and then hit enter, for example: -s -p");
                 var flags = Console.ReadLine();
                 if (flags?.Length >= 2)
                 {
@@ -309,6 +309,7 @@ static bool CheckFileIsValid(string? candidate)
         Console.WriteLine("candidate path was null??");
         return false;
     }
+    candidate = candidate.Trim();
     if (!File.Exists(candidate))
     {
         Console.WriteLine("### " + candidate + " is not a valid Path ###");
