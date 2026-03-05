@@ -4,6 +4,7 @@ using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Layout;
 using iText.Layout.Element;
 using Newtonsoft.Json;
+using Org.BouncyCastle.Tls;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -46,6 +47,11 @@ Console.WriteLine("PDF read, outputting special BMK:\n");
 var BMKs = ExtractBMK(pdfPath);
 BMKs = Sort(BMKs);
 
+if (flagC)
+{
+    BMKs = Combine(BMKs);
+}
+
 //todo also extract bmk for the other pages on a per-page basis, and then compare via material number against the complete block drawing??
 
 //todo add material number per page into file name (and pdf document)
@@ -87,7 +93,7 @@ The following flags are also available:
     -g  | group BMK by schematic page.
     -s  | appends a page to the pdf/continues the csv instead of splitting into a new file once a the table on the current page is full.
     -u  | unsorted, does not alphabetically sort the valve names.
-    -c  | output cascade and core pull valve stacks as one single sticker, and not all as single stickers.
+    -c  | output needle valve and core pull valve stacks as one single sticker, and not all as single stickers.
     -h  | outputs this help text.
 """
         );
@@ -129,7 +135,7 @@ void GetFlagsFromArgs(string[] args)
                 case 'c':
                 case 'C':
                     flagC = true;
-                    Console.WriteLine("Cascades and so on will be bundled");
+                    Console.WriteLine("Cores, needle valves and so on will be bundled");
                     continue;
                 case 'h':
                 case 'H':
@@ -348,7 +354,7 @@ static void UpdateDirectoryCache(StringBuilder builder, ref List<string> data)
 }
 #endregion fileBrowser
 
-IList<IList<string>> ExtractBMK(string pdfPath)
+List<List<string>> ExtractBMK(string pdfPath)
 {
     PdfReader reader = new(pdfPath);
     PdfDocument pdf = new(reader);
@@ -439,7 +445,6 @@ IList<IList<string>> ExtractBMK(string pdfPath)
                     }
                     else
                     {
-
                         broken = true;
                     }
                     break;
@@ -456,7 +461,7 @@ IList<IList<string>> ExtractBMK(string pdfPath)
         }
     }
 
-    IList<IList<string>> returner = [];
+    List<List<string>> returner = [];
 
     for (int f = 0; f < AllBMKs.Count; f++)
     {
@@ -466,81 +471,100 @@ IList<IList<string>> ExtractBMK(string pdfPath)
     return returner;
 }
 
-void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document, PdfPage page)
+static List<List<string>> Combine(List<List<string>> BMKs)
 {
-    int counter = 0;
-    int pageNumber = 1;
-    int tableLeft = 30;
-    int tableBottom = 70;
-    Table bmkTable = new(Colcount);
-    float PageWidth = page.GetPageSizeWithRotation().GetWidth();
-    foreach (string key in BMKs)
+    foreach (var file in BMKs)
     {
-        counter++;
-        if (counter > Rowcount * Colcount)
+        //cores fp
+        if (file.Contains("X704"))
         {
-            counter = 1;
-            FinishTable(1);
-            pageNumber++;
-            _ = pdf.AddNewPage();
-            page = pdf.GetPage(pageNumber);
-            document.Add(new AreaBreak());
-            bmkTable = new(Colcount);
+            //todo
         }
+        //cores mp
+        else if (file.Contains("X700"))
+        {
+            //todo
+        }
+        //needle valves fp
+        else if (file.Contains("X820"))
+        {
+            ReplaceNeedles(file, 0);
+        }
+        //needle valves fp cont
+        else if (file.Contains("X852"))
+        {
+            ReplaceNeedles(file, 16);
+        }
+        //needle valves mp
+        else if (file.Contains("XXXXXXX")) //todo
+        {
 
-        Cell data = new();
-        //1mm = 72pt
-        SetUpCell(cellheight, cellWidth, key, data);
-        bmkTable.AddCell(data);
+        }
+        //parting plane fp
+        else if (file.Contains("XXXXXXX")) //todo
+        {
 
+        }
+        //parting plane mp
+        else if (file.Contains("XXXXXXX")) //todo
+        {
+
+        }
     }
+    return BMKs;
 
-    FinishTable(0);
-
-    //set to 1 for full last row
-    void FinishTable(int subtract)
+    static void ReplaceNeedles(List<string> file, int needleCounter)
     {
-        var canvas = new PdfCanvas(page);
-        float stroke = bmkTable.GetStrokeWidth() ?? 1;
-        float width = bmkTable.GetNumberOfColumns() * mmToPt(cellWidth + stroke);
-        float height = (bmkTable.GetNumberOfRows() - subtract) * mmToPt(cellheight + stroke);
+        needleCounter *= 2;
+        int LowerNumber = 20 + needleCounter;
+        int UpperNumber = LowerNumber + 1;
+        int i = file.IndexOf($"Q8{LowerNumber}");
+        while (i > 0)
+        {
+            string temp = $"Q8{LowerNumber}";
+            if (file.Contains($"Q8{UpperNumber}"))
+            {
+                temp += $"/8{UpperNumber}";
+                file.Remove($"Q8{UpperNumber}");
+                file.Remove($"Q8{LowerNumber}/8{UpperNumber}");
+            }
+            if (file.Contains($"R8{UpperNumber}0"))
+            {
+                temp += $"\nR8{UpperNumber}0";
+                file.Remove($"R8{UpperNumber}0");
+            }
+            if (file.Contains($"F8{LowerNumber}0"))
+            {
+                temp += $"\nF8{LowerNumber}0";
+                file.Remove($"F8{LowerNumber}0");
+            }
+            if (file.Contains($"R8{LowerNumber}0"))
+            {
+                temp += $"\nR8{LowerNumber}0";
+                file.Remove($"R8{LowerNumber}0");
+            }
+            if (file.Contains($"R8{LowerNumber}1"))
+            {
+                temp += $"\nR8{LowerNumber}1";
+                file.Remove($"R8{LowerNumber}1");
+            }
+            if (file.Contains($"R8{UpperNumber}1"))
+            {
+                temp += $"/8{UpperNumber}1";
+                file.Remove($"R8{UpperNumber}1");
+            }
+            i = file.IndexOf($"Q8{LowerNumber}");
+            file[i] = temp;
 
-        bmkTable.SetMargin(0);
-        bmkTable.SetPadding(0);
-        bmkTable.SetBorder(null);
-        bmkTable.SetFixedPosition(tableLeft, tableBottom, width);
-        bmkTable.SetHeight(height);
-
-        canvas.MoveTo(tableLeft, tableBottom - 10);
-        canvas.LineTo(width + tableLeft, tableBottom - 10);
-        canvas.MoveTo(width + tableLeft + 10, tableBottom);
-        canvas.LineTo(width + tableLeft + 10, height + tableBottom);
-
-        document.ShowTextAligned((bmkTable.GetNumberOfColumns() * cellWidth).ToString(), width / 2 + tableLeft, tableBottom - 30, iText.Layout.Properties.TextAlignment.CENTER);
-        document.ShowTextAligned((bmkTable.GetNumberOfRows() * cellheight).ToString(), width + tableLeft + 30, height / 2 + tableBottom, iText.Layout.Properties.TextAlignment.CENTER, MathF.Tau / 4);
-        document.ShowTextAligned("Seite: " + pageNumber, PageWidth - 15, 10, iText.Layout.Properties.TextAlignment.RIGHT);
-        document.Add(bmkTable);
-        document.Flush();
-    }
-
-    void SetUpCell(int cellheight, int cellWidth, string key, Cell data)
-    {
-        data.SetPadding(0);
-        data.SetMargin(0);
-        data.SetHeight(mmToPt(cellheight));
-        data.SetMinHeight(mmToPt(cellheight));
-        data.SetMaxHeight(mmToPt(cellheight));
-        data.SetWidth(mmToPt(cellWidth));
-        data.SetMinWidth(mmToPt(cellWidth));
-        data.SetMaxWidth(mmToPt(cellWidth));
-        data.Add(new Paragraph(key));
-        data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
-        data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
-        data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
+            //todo respect weird change at 20 or sth
+            needleCounter += 2;
+            LowerNumber = 20 + needleCounter;
+            UpperNumber = LowerNumber + 1;
+            i = i = file.IndexOf($"Q8{LowerNumber}");
+        }
     }
 }
-
-string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, IList<IList<string>> BMKs)
+string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, List<List<string>> BMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
     string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK-0.pdf");
@@ -567,7 +591,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
         }
         do
         {
-            IList<string> partlist = new List<string>((int)MathF.Min(BMKs[i].Count, Rowcount * Colcount));
+            List<string> partlist = new((int)MathF.Min(BMKs[i].Count, Rowcount * Colcount));
             if (!flagS)
             {
                 int pageFullCounter = 0;
@@ -610,10 +634,95 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
     }
 }
 
-string ExportToCSV(string pdfPath, IList<IList<string>> bMKs)
+void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document, PdfPage page)
+{
+    int counter = 0;
+    int pageNumber = 1;
+    int tableLeft = 30;
+    int tableBottom = 70;
+    Table bmkTable = new(Colcount);
+    float PageWidth = page.GetPageSizeWithRotation().GetWidth();
+    foreach (string key in BMKs)
+    {
+        if (counter >= Rowcount * Colcount)
+        {
+            counter = 1;
+            FinishTable(1);
+            pageNumber++;
+            _ = pdf.AddNewPage();
+            page = pdf.GetPage(pageNumber);
+            document.Add(new AreaBreak());
+            bmkTable = new(Colcount);
+        }
+
+        Cell data = SetUpCell(cellheight, cellWidth, key);
+        counter += data.GetRowspan();
+        bmkTable.AddCell(data);
+    }
+    while (counter % Colcount != 0)
+    {
+        counter++;
+        bmkTable.AddCell(SetUpCell(cellheight, cellWidth, string.Empty));
+    }
+
+    FinishTable(0);
+
+    //set to 1 for full last row
+    void FinishTable(int subtract)
+    {
+        var canvas = new PdfCanvas(page);
+        float stroke = bmkTable.GetStrokeWidth() ?? 1;
+        float width = bmkTable.GetNumberOfColumns() * mmToPt(cellWidth + stroke);
+        float height = (bmkTable.GetNumberOfRows() - subtract) * mmToPt(cellheight + stroke);
+
+        bmkTable.SetMargin(0);
+        bmkTable.SetPadding(0);
+        bmkTable.SetBorder(null);
+        bmkTable.SetFixedPosition(tableLeft, tableBottom, width);
+        bmkTable.SetHeight(height);
+
+        canvas.MoveTo(tableLeft, tableBottom - 10);
+        canvas.LineTo(width + tableLeft, tableBottom - 10);
+        canvas.MoveTo(width + tableLeft + 10, tableBottom);
+        canvas.LineTo(width + tableLeft + 10, height + tableBottom);
+
+        document.ShowTextAligned((bmkTable.GetNumberOfColumns() * cellWidth).ToString(), width / 2 + tableLeft, tableBottom - 30, iText.Layout.Properties.TextAlignment.CENTER);
+        document.ShowTextAligned((bmkTable.GetNumberOfRows() * cellheight).ToString(), width + tableLeft + 30, height / 2 + tableBottom, iText.Layout.Properties.TextAlignment.CENTER, MathF.Tau / 4);
+        document.ShowTextAligned("Seite: " + pageNumber, PageWidth - 15, 10, iText.Layout.Properties.TextAlignment.RIGHT);
+        document.Add(bmkTable);
+        document.Flush();
+    }
+
+    Cell SetUpCell(int cellheight, int cellWidth, string key)
+    {
+        int sizer = 1;
+        if (key.Contains('\n'))
+        {
+            sizer += key.Where(c => c == '\n').ToArray().Length;
+        }
+        Cell data = new(sizer, 1);
+        data.SetPadding(0);
+        data.SetMargin(0);
+        data.SetHeight(mmToPt(sizer * cellheight));
+        data.SetMinHeight(mmToPt(sizer * cellheight));
+        data.SetMaxHeight(mmToPt(sizer * cellheight));
+        data.SetWidth(mmToPt(cellWidth));
+        data.SetMinWidth(mmToPt(cellWidth));
+        data.SetMaxWidth(mmToPt(cellWidth));
+        data.Add(new Paragraph(key));
+        data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
+        data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
+        data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
+        return data;
+    }
+}
+
+
+string ExportToCSV(string pdfPath, List<List<string>> bMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
     string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK-0.csv");
+    char seperator = ',';
     StringBuilder sb = new();
     int fileCounter = 1;
     foreach (var file in BMKs)
@@ -623,8 +732,14 @@ string ExportToCSV(string pdfPath, IList<IList<string>> bMKs)
         {
             counter++;
 
-            sb.Append(key + ",");
-
+            if (key.Contains('\n'))
+            {
+                sb.Append($"\"{key}\"{seperator}");
+            }
+            else
+            {
+                sb.Append($"{key}{seperator}");
+            }
             //todo split correctly here if more than col*row but less than what should be for file
             if (!flagS && ((counter >= Rowcount * Colcount)))
             {
@@ -659,7 +774,7 @@ static void AnnounceWrittenFile(bool flagS, string outputPath)
     Console.Write("\n");
 }
 
-IList<IList<string>> Sort(IList<IList<string>> BMKs)
+List<List<string>> Sort(List<List<string>> BMKs)
 {
     if (!flagU)
     {
@@ -667,12 +782,12 @@ IList<IList<string>> Sort(IList<IList<string>> BMKs)
         {
             for (int i = 0; i < BMKs.Count; i++)
             {
-                BMKs[i] = BMKs[i].ToImmutableSortedSet();
+                BMKs[i] = BMKs[i].ToImmutableSortedSet().ToList();
             }
         }
         else
         {
-            BMKs[0] = BMKs[0].ToImmutableSortedSet();
+            BMKs[0] = BMKs[0].ToImmutableSortedSet().ToList();
         }
     }
 
