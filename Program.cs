@@ -18,7 +18,7 @@ int Colcount = 7;
 int Rowcount = 14;
 bool flagP = false; //done
 bool flagU = false; //done
-bool flagC = false; //todo last
+bool flagC = false; //todo
 bool flagG = false; //done
 bool flagS = false; //done
 
@@ -43,29 +43,14 @@ ArgumentNullException.ThrowIfNull(pdfPath, nameof(pdfPath));
 
 Console.WriteLine("PDF read, outputting special BMK:\n");
 
-IList<IList<string>> BMKs = ExtractBMK(pdfPath);
-if (!flagU)
-{
-    if (flagG)
-    {
-        for (int i = 0; i < BMKs.Count; i++)
-        {
-            BMKs[i] = BMKs[i].ToImmutableSortedSet();
-        }
-    }
-    else
-    {
-        BMKs = BMKs.ToImmutableSortedSet();
-    }
-}
+var BMKs = ExtractBMK(pdfPath);
+BMKs = Sort(BMKs);
 
-//todo also extract bmk for the other pages on a per-page basis, and then compare via material number against the complete block drawing
+//todo also extract bmk for the other pages on a per-page basis, and then compare via material number against the complete block drawing??
 
-//todo build into csv, or excel or whatever?
-string outputPath = string.Empty;
+//todo add material number per page into file name (and pdf document)
 
-outputPath = ExportToCSV(pdfPath, BMKs);
-
+string outputPath = ExportToCSV(pdfPath, BMKs);
 AnnounceWrittenFile(flagS, outputPath);
 if (flagP)
 {
@@ -368,13 +353,20 @@ IList<IList<string>> ExtractBMK(string pdfPath)
     PdfReader reader = new(pdfPath);
     PdfDocument pdf = new(reader);
     List<List<string>> Alllines = [];
+    if (!flagG)
+    {
+        Alllines.Add([]);
+    }
     for (int page = 1; page <= pdf.GetNumberOfPages(); page++)
     {
         //todo maybe lookup material number against sticker list
         var pageText = PdfTextExtractor.GetTextFromPage(pdf.GetPage(page));
         if (pageText.Contains("INHALT BLOCKABRUF"))
         {
-            Alllines.Add([]);
+            if (flagG)
+            {
+                Alllines.Add([]);
+            }
             foreach (var line in pageText.Split('\n'))
             {
                 Alllines[^1].AddRange(line.Split(' '));
@@ -551,39 +543,37 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
 string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, IList<IList<string>> BMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
-    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK.pdf");
-    if (flagS)
+    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK-0.pdf");
+
+    int totalFileCount = BMKs.Count;
+    if (!flagS)
     {
-        SetUpPage(0, 0, out PdfDocument pdf, out PdfPage page, out Document document);
-        AddBMKAsTable(BMKs[0], pdf, document, page);
-        document.Close();
-    }
-    else
-    {
-        int totalFileCount = BMKs.Count;
         foreach (var list in BMKs)
         {
             if (list.Count > Rowcount * Colcount)
             {
-                totalFileCount += (int)MathF.Floor(list.Count / Rowcount * Colcount);
+                totalFileCount += (int)MathF.Floor(list.Count / (Rowcount * Colcount));
             }
         }
-        int pagecounter = 1;
-        for (int i = 0; i < BMKs.Count; i++)
+    }
+    int pagecounter = 1;
+    for (int i = 0; i < BMKs.Count; i++)
+    {
+        int PerPageFileCount = 1;
+        int SpentItemCounter = 0;
+        if (!flagS && BMKs[i].Count > Rowcount * Colcount)
         {
-            int PerPageFileCount = 1;
-            int SpentItemCounter = 0;
-            if (BMKs[i].Count > Rowcount * Colcount)
+            PerPageFileCount += (int)MathF.Floor(BMKs[i].Count / (Rowcount * Colcount));
+        }
+        do
+        {
+            IList<string> partlist = new List<string>((int)MathF.Min(BMKs[i].Count, Rowcount * Colcount));
+            if (!flagS)
             {
-                PerPageFileCount += (int)MathF.Floor(BMKs[i].Count / (Rowcount * Colcount));
-            }
-            do
-            {
-                var partlist = new List<string>((int)MathF.Min(BMKs[i].Count, Rowcount * Colcount));
                 int pageFullCounter = 0;
                 for (int x = SpentItemCounter; x < BMKs[i].Count; x++)
                 {
-                    if(pageFullCounter >= Rowcount * Colcount)
+                    if (pageFullCounter >= Rowcount * Colcount)
                     {
                         break;
                     }
@@ -591,16 +581,20 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
                     partlist.Add(BMKs[i][x]);
                     SpentItemCounter++;
                 }
-                SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document);
-                AddBMKAsTable(partlist, pdf, document, page);
-                document.Close();
-                outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter}.pdf");
-                pagecounter++;
-            } while (PerPageFileCount-- > 1);
-        }
-        //undo counter increase for last one. stupid but easy fix
-        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter - 2}.pdf");
+            }
+            else
+            {
+                partlist = BMKs[i];
+            }
+            SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document);
+            AddBMKAsTable(partlist, pdf, document, page);
+            document.Close();
+            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter}.pdf");
+            pagecounter++;
+        } while (PerPageFileCount-- > 1);
     }
+    //undo counter increase for last one. stupid but easy fix
+    outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter - 2}.pdf");
     return outputPath;
 
     void SetUpPage(int pageNumber, int pageCount, out PdfDocument pdf, out PdfPage page, out Document document)
@@ -619,7 +613,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
 string ExportToCSV(string pdfPath, IList<IList<string>> bMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
-    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK.csv");
+    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK-0.csv");
     StringBuilder sb = new();
     int fileCounter = 1;
     foreach (var file in BMKs)
@@ -663,4 +657,24 @@ static void AnnounceWrittenFile(bool flagS, string outputPath)
         Console.Write(" (last file)");
     }
     Console.Write("\n");
+}
+
+IList<IList<string>> Sort(IList<IList<string>> BMKs)
+{
+    if (!flagU)
+    {
+        if (flagG)
+        {
+            for (int i = 0; i < BMKs.Count; i++)
+            {
+                BMKs[i] = BMKs[i].ToImmutableSortedSet();
+            }
+        }
+        else
+        {
+            BMKs[0] = BMKs[0].ToImmutableSortedSet();
+        }
+    }
+
+    return BMKs;
 }
