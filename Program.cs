@@ -1,29 +1,25 @@
 ﻿using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
-using iText.Kernel.Validation.Context;
 using iText.Layout;
 using iText.Layout.Element;
-using iText.Layout.Renderer;
 using Newtonsoft.Json;
-using System.Collections;
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Security.Cryptography.X509Certificates;
+using System.Runtime.InteropServices;
 using System.Text;
 
 JsonConvert.DefaultSettings = () => new JsonSerializerSettings { MaxDepth = 128 };
 string? pdfPath = string.Empty;
-List<int> BMKPerPage = [];
 string orderNumber = string.Empty;
 int cellheight = 9;
 int cellWidth = 37;
 int Colcount = 7;
 int Rowcount = 14;
-bool flagP = false;
+bool flagP = false; //done
 bool flagU = false; //done
 bool flagC = false; //todo last
-bool flagG = false;
+bool flagG = false; //done
 bool flagS = false; //done
 
 
@@ -47,10 +43,20 @@ ArgumentNullException.ThrowIfNull(pdfPath, nameof(pdfPath));
 
 Console.WriteLine("PDF read, outputting special BMK:\n");
 
-IList<string> BMKs = ExtractBMK(pdfPath);
+IList<IList<string>> BMKs = ExtractBMK(pdfPath);
 if (!flagU)
 {
-    BMKs = BMKs.ToImmutableSortedSet();
+    if (flagG)
+    {
+        for (int i = 0; i < BMKs.Count; i++)
+        {
+            BMKs[i] = BMKs[i].ToImmutableSortedSet();
+        }
+    }
+    else
+    {
+        BMKs = BMKs.ToImmutableSortedSet();
+    }
 }
 
 //todo also extract bmk for the other pages on a per-page basis, and then compare via material number against the complete block drawing
@@ -82,6 +88,7 @@ static float mmToPt(float mm)
     return mm / 25.4f * 72;
 }
 
+#region console
 void PutHelp()
 {
     Console.WriteLine(
@@ -211,6 +218,7 @@ string? GetAllFromConsole()
         }
     }
 }
+#endregion console
 
 #region fileBrowser
 // https://stackoverflow.com/a/8946847/1188513
@@ -355,24 +363,28 @@ static void UpdateDirectoryCache(StringBuilder builder, ref List<string> data)
 }
 #endregion fileBrowser
 
-IList<string> ExtractBMK(string pdfPath)
+IList<IList<string>> ExtractBMK(string pdfPath)
 {
     PdfReader reader = new(pdfPath);
     PdfDocument pdf = new(reader);
-    StringBuilder text = new();
+    List<List<string>> Alllines = [];
     for (int page = 1; page <= pdf.GetNumberOfPages(); page++)
     {
         //todo maybe lookup material number against sticker list
         var pageText = PdfTextExtractor.GetTextFromPage(pdf.GetPage(page));
         if (pageText.Contains("INHALT BLOCKABRUF"))
         {
-            text.Append(pageText);
+            Alllines.Add([]);
+            foreach (var line in pageText.Split('\n'))
+            {
+                Alllines[^1].AddRange(line.Split(' '));
+            }
         }
     }
     reader.Close();
 
-    List<string> lines = [.. text.ToString().Split('\n')];
-    HashSet<string> BMKs = new(lines.Count / 2);
+
+    List<HashSet<string>> AllBMKs = [];
 
     //A for some lines
     //P for pressure lines
@@ -383,78 +395,83 @@ IList<string> ExtractBMK(string pdfPath)
     //N for NG valve size
     char[] disallowedChars = ['A', 'P', 'G', 'T', 'L', 'M', 'N'];
 
-    for (int i = 0; i < lines.Count; i++)
+    foreach (var lines in Alllines)
     {
-        if (lines[i].Length < 3)
+        AllBMKs.Add([]);
+        var BMKs = AllBMKs[^1];
+        for (int i = 0; i < lines.Count; i++)
         {
-            continue;
-        }
-        var span = lines[i].AsSpan().Trim();
-
-        if (disallowedChars.Contains(span[0]))
-        {
-            continue;
-        }
-
-        if ((!char.IsAsciiLetterUpper(span[0])
-            || !char.IsAsciiDigit(span[1]))
-            && (!char.IsAsciiLetterUpper(span[0])
-            || !char.IsAsciiLetterUpper(span[1])
-            || !char.IsAsciiDigit(span[2])))
-        {
-            if (orderNumber == string.Empty && span.Contains("Blatt".AsSpan(), StringComparison.InvariantCulture))
+            if (lines[i].Length < 3)
             {
-                orderNumber = span[..6].ToString();
-                Console.WriteLine("Order number " + orderNumber + " found");
+                continue;
             }
-            continue;
-        }
+            var span = lines[i].AsSpan().Trim();
 
-        //remove KM machine description
-        if (span[0] == 'K' && span[1] == 'M')
-        {
-            continue;
-        }
-
-        bool broken = false;
-        //split lines where we have miltiple in one, either with space or without
-        for (int ci = 2; ci < span[2..].Length; ci++)
-        {
-            char c = span[ci];
-            if (c == ' ')
+            if (disallowedChars.Contains(span[0]))
             {
-                string temp = lines[i];
-                lines.RemoveAt(i);
-                lines.InsertRange(i, temp.Split(' '));
-                break;
+                continue;
             }
-            else if (!char.IsAsciiDigit(c) && c is not ('/' or ' '))
+
+            if ((!char.IsAsciiLetterUpper(span[0])
+                || !char.IsAsciiDigit(span[1]))
+                && (!char.IsAsciiLetterUpper(span[0])
+                || !char.IsAsciiLetterUpper(span[1])
+                || !char.IsAsciiDigit(span[2])))
             {
-                if (char.IsAsciiLetterUpper(c))
+                if (orderNumber == string.Empty && span.Contains("Blatt".AsSpan(), StringComparison.InvariantCulture))
                 {
-                    var temp = lines[i].AsSpan();
-                    lines.RemoveAt(i);
-                    lines.InsertRange(i, [temp[..ci].ToString(), temp[ci..].ToString()]);
+                    orderNumber = span[..6].ToString();
+                    Console.WriteLine("Order number " + orderNumber + " found");
                 }
-                else
-                {
+                continue;
+            }
 
-                    broken = true;
-                }
-                break;
-            }
-        }
-        if (!broken)
-        {
-            try
+            //remove KM machine description
+            if (span[0] == 'K' && span[1] == 'M')
             {
-                BMKs.Add(lines[i].Trim().Trim("/").ToString());
+                continue;
             }
-            catch { }
+
+            bool broken = false;
+            //split lines where we have miltiple in one, either with space or without
+            for (int ci = 2; ci < span[2..].Length; ci++)
+            {
+                char c = span[ci];
+                if (!char.IsAsciiDigit(c) && c is not ('/' or ' '))
+                {
+                    if (char.IsAsciiLetterUpper(c))
+                    {
+                        var temp = lines[i].AsSpan();
+                        lines.RemoveAt(i);
+                        lines.InsertRange(i, [temp[..ci].ToString(), temp[ci..].ToString()]);
+                    }
+                    else
+                    {
+
+                        broken = true;
+                    }
+                    break;
+                }
+            }
+            if (!broken)
+            {
+                try
+                {
+                    BMKs.Add(lines[i].Trim().Trim("/").ToString());
+                }
+                catch { }
+            }
         }
     }
 
-    return BMKs.ToImmutableList();
+    IList<IList<string>> returner = [];
+
+    for (int f = 0; f < AllBMKs.Count; f++)
+    {
+        returner.Add([.. AllBMKs[f]]);
+    }
+
+    return returner;
 }
 
 void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document, PdfPage page)
@@ -531,33 +548,58 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
     }
 }
 
-string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, IList<string> BMKs)
+string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, IList<IList<string>> BMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
     string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK.pdf");
     if (flagS)
     {
         SetUpPage(0, 0, out PdfDocument pdf, out PdfPage page, out Document document);
-        AddBMKAsTable(BMKs, pdf, document, page);
+        AddBMKAsTable(BMKs[0], pdf, document, page);
         document.Close();
     }
     else
     {
-        int pageCount = (int)MathF.Ceiling((float)BMKs.Count / ((float)Rowcount * (float)Colcount));
-        for (int i = 0; i < pageCount; i++)
+        int totalFileCount = BMKs.Count;
+        foreach (var list in BMKs)
         {
-            var BMKRange = new List<string>(Rowcount * Colcount);
-            for (int j = i * Rowcount * Colcount; j < MathF.Min(BMKs.Count, (i + 1) * Rowcount * Colcount); j++)
+            if (list.Count > Rowcount * Colcount)
             {
-                BMKRange.Add(BMKs[j]);
+                totalFileCount += (int)MathF.Floor(list.Count / Rowcount * Colcount);
             }
-            SetUpPage(i + 1, pageCount, out PdfDocument pdf, out PdfPage page, out Document document);
-            AddBMKAsTable(BMKRange, pdf, document, page);
-            document.Close();
-            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{i + 1}.pdf");
+        }
+        int pagecounter = 1;
+        for (int i = 0; i < BMKs.Count; i++)
+        {
+            int PerPageFileCount = 1;
+            int SpentItemCounter = 0;
+            if (BMKs[i].Count > Rowcount * Colcount)
+            {
+                PerPageFileCount += (int)MathF.Floor(BMKs[i].Count / (Rowcount * Colcount));
+            }
+            do
+            {
+                var partlist = new List<string>((int)MathF.Min(BMKs[i].Count, Rowcount * Colcount));
+                int pageFullCounter = 0;
+                for (int x = SpentItemCounter; x < BMKs[i].Count; x++)
+                {
+                    if(pageFullCounter >= Rowcount * Colcount)
+                    {
+                        break;
+                    }
+                    pageFullCounter++;
+                    partlist.Add(BMKs[i][x]);
+                    SpentItemCounter++;
+                }
+                SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document);
+                AddBMKAsTable(partlist, pdf, document, page);
+                document.Close();
+                outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter}.pdf");
+                pagecounter++;
+            } while (PerPageFileCount-- > 1);
         }
         //undo counter increase for last one. stupid but easy fix
-        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pageCount - 1}.pdf");
+        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter - 2}.pdf");
     }
     return outputPath;
 
@@ -574,34 +616,42 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
     }
 }
 
-string ExportToCSV(string pdfPath, IList<string> bMKs)
+string ExportToCSV(string pdfPath, IList<IList<string>> bMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
     string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK.csv");
     StringBuilder sb = new();
-    int counter = 0;
     int fileCounter = 1;
-    foreach (string key in BMKs)
+    foreach (var file in BMKs)
     {
-        counter++;
-
-        sb.Append(key + ",");
-
-        if (!flagS && counter >= Rowcount * Colcount)
+        int counter = 0;
+        foreach (string key in file)
         {
-            counter = 0;
-            File.WriteAllText(outputPath, sb.ToString());
-            sb.Clear();
+            counter++;
 
-            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
+            sb.Append(key + ",");
+
+            //todo split correctly here if more than col*row but less than what should be for file
+            if (!flagS && ((counter >= Rowcount * Colcount)))
+            {
+                counter = 0;
+                File.WriteAllText(outputPath, sb.ToString());
+                sb.Clear();
+
+                outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
+            }
+            if (counter % Colcount == 0 && counter > 0)
+            {
+                sb.Append('\n');
+            }
         }
-        if (counter % Colcount == 0 && counter > 0)
-        {
-            sb.Append('\n');
-        }
+        counter = 0;
+        File.WriteAllText(outputPath, sb.ToString());
+        sb.Clear();
+
+        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
     }
-    File.WriteAllText(outputPath, sb.ToString());
-    sb.Clear();
+    outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter - 2}.csv");
     return outputPath;
 }
 
