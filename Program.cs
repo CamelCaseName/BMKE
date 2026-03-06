@@ -833,7 +833,7 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         int sizer = 1;
         if (key.Contains('\n'))
         {
-            sizer += key.Where(c => c == '\n').ToArray().Length - 1;
+            sizer += MathF.Round(key.Where(c => c == '\n').ToArray().Length / 1.25f);
         }
         Cell data = new(sizer, 1);
         data.SetPadding(0);
