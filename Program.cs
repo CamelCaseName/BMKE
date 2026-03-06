@@ -4,6 +4,7 @@ using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Layout;
 using iText.Layout.Element;
 using Newtonsoft.Json;
+using Org.BouncyCastle.Bcpg;
 using Org.BouncyCastle.Tls;
 using System.Collections.Immutable;
 using System.Globalization;
@@ -479,42 +480,167 @@ static List<List<string>> Combine(List<List<string>> BMKs)
     foreach (var file in BMKs)
     {
         //cores fp
-        if (file.Contains("X704"))
+        if (file.Contains("Q704"))
         {
-            //todo
+            ReplaceCores(file, true);
         }
         //cores mp
-        else if (file.Contains("X700"))
+        if (file.Contains("Q700"))
         {
-            //todo
+            ReplaceCores(file, false);
+        }
+        //cores prop fp
+        if (file.Contains("K7005"))
+        {
+            ReplacePropCores(file, true);
+        }
+        //cores prop mp
+        if (file.Contains("K6005"))
+        {
+            ReplacePropCores(file, false);
         }
         //needle valves fp
-        else if (file.Contains("X820"))
+        if (file.Contains("Q820"))
         {
             ReplaceNeedles(file, 0);
         }
         //needle valves fp cont
-        else if (file.Contains("X852"))
+        if (file.Contains("Q852"))
         {
             ReplaceNeedles(file, 16);
         }
         //needle valves mp
-        else if (file.Contains("XXXXXXX")) //todo
+        if (file.Contains("XXXXXXX")) //todo
         {
 
         }
         //parting plane fp
-        else if (file.Contains("XXXXXXX")) //todo
+        if (file.Contains("XXXXXXX")) //todo
         {
 
         }
         //parting plane mp
-        else if (file.Contains("XXXXXXX")) //todo
+        if (file.Contains("XXXXXXX")) //todo
         {
 
         }
     }
     return BMKs;
+
+    //todo test
+    static void ReplaceCores(List<string> file, bool fp)
+    {
+        int coreCounter = 0;
+        int LowerNumber = 700 + (fp ? 4 : 0);
+        int UpperNumber = 710 + (fp ? 4 : 0);
+        int i = file.IndexOf($"Q{LowerNumber}");
+        while (i > 0)
+        {
+            string temp = $"Q{LowerNumber}";
+            if (file.Contains($"Q{UpperNumber}"))
+            {
+                temp += $"/{UpperNumber}";
+                file.Remove($"Q{UpperNumber}");
+                file.Remove($"Q{LowerNumber}/{UpperNumber}");
+            }
+            if (file.Contains($"R{LowerNumber}1"))
+            {
+                temp += $"\nR{LowerNumber}1";
+                file.Remove($"R{LowerNumber}1");
+            }
+            if (file.Contains($"R{LowerNumber}0"))
+            {
+                temp += $"\nR{LowerNumber}0";
+                file.Remove($"R{LowerNumber}0");
+            }
+            if (file.Contains($"R{UpperNumber}0"))
+            {
+                temp += $"/{UpperNumber}0";
+                file.Remove($"R{UpperNumber}0");
+                file.Remove($"R{LowerNumber}0/{UpperNumber}0");
+            }
+
+            file[i] = temp;
+
+            //todo respect weird change at 20 or sth
+            coreCounter += 2;
+            LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
+            UpperNumber = 700 + coreCounter * 10 + 10 + (fp ? 4 : 0);
+            i = file.IndexOf($"Q{LowerNumber}");
+        }
+    }
+
+    static void ReplacePropCores(List<string> file, bool fp)
+    {
+        int coreCounter = 0;
+        int LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
+        int UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
+        int firstProp = (fp ? 7000 : 6000) + 5 + coreCounter;
+        int secondProp = (fp ? 7000 : 6000) + 6 + coreCounter;
+        int i = file.IndexOf($"K{firstProp}");
+        while (i > 0)
+        {
+            string temp = $"K{firstProp}";
+            if (fp)
+            {
+                if (file.Contains($"K{secondProp}"))
+                {
+                    temp += $"\nK{secondProp}";
+                    file.Remove($"K{secondProp}");
+                }
+                if (file.Contains($"R{LowerNumber}1"))
+                {
+                    temp += $"\nR{LowerNumber}1";
+                    file.Remove($"R{LowerNumber}1");
+                }
+                if (file.Contains($"R{LowerNumber}0"))
+                {
+                    temp += $"\nR{LowerNumber}0";
+                    file.Remove($"R{LowerNumber}0");
+                }
+                if (file.Contains($"R{UpperNumber}0"))
+                {
+                    temp += $"/{UpperNumber}0";
+                    file.Remove($"R{UpperNumber}0");
+                    file.Remove($"R{LowerNumber}0/{UpperNumber}0");
+                }
+            }
+            else
+            {
+                if (file.Contains($"R{LowerNumber}1"))
+                {
+                    temp += $"\nR{LowerNumber}1";
+                    file.Remove($"R{LowerNumber}1");
+                }
+                if (file.Contains($"K{secondProp}"))
+                {
+                    temp += $"\nK{secondProp}";
+                    file.Remove($"K{secondProp}");
+                }
+                if (file.Contains($"R{UpperNumber}0"))
+                {
+                    temp += $"\nR{UpperNumber}0";
+                    file.Remove($"R{UpperNumber}0");
+                }
+                if (file.Contains($"R{LowerNumber}0"))
+                {
+                    temp += $"/{LowerNumber}0";
+                    file.Remove($"R{LowerNumber}0");
+                    file.Remove($"R{LowerNumber}0/{UpperNumber}0");
+                }
+            }
+
+            file[i] = temp;
+
+            //todo respect weird change at 20 or sth
+            coreCounter += 2;
+            LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
+            UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
+            firstProp = (fp ? 7000 : 6000) + 5 + coreCounter;
+            secondProp = (fp ? 7000 : 6000) + 6 + coreCounter;
+            i = file.IndexOf($"K{firstProp}");
+        }
+    }
 
     static void ReplaceNeedles(List<string> file, int needleCounter)
     {
@@ -567,6 +693,7 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         }
     }
 }
+
 string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, List<List<string>> BMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
@@ -633,7 +760,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
         page = pdf.AddNewPage();
         document = new(pdf);
         document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(pageNumber > 0 ? $"{{Seite {pageNumber}/{pageCount}}}" : string.Empty)}"));
-        document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen"));
+        document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen. Mehrfachaufkleber sind ein vielfaches hoch, aber gleich breit."));
     }
 }
 
@@ -645,27 +772,26 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
     int tableBottom = 70;
     Table bmkTable = new(Colcount);
     float PageWidth = page.GetPageSizeWithRotation().GetWidth();
+    int colCounter = 0;
+    int[] heightTracker = new int[Colcount];
     foreach (string key in BMKs)
     {
-        if (counter >= Rowcount * Colcount)
-        {
-            counter = 1;
-            FinishTable(1);
-            pageNumber++;
-            _ = pdf.AddNewPage();
-            page = pdf.GetPage(pageNumber);
-            document.Add(new AreaBreak());
-            bmkTable = new(Colcount);
-        }
+        //if (counter >= Rowcount * Colcount)
+        //{
+        //    ResetTable();
+        //}
 
         Cell data = SetUpCell(cellheight, cellWidth, key);
-        counter += data.GetRowspan();
+        int height = data.GetRowspan();
+        colCounter = (colCounter + 1) % Colcount;
+        if (height + heightTracker[colCounter] > Rowcount)
+        {
+            ResetTable();
+            colCounter = 0;
+        }
+        heightTracker[colCounter] += height;
+        counter += height;
         bmkTable.AddCell(data);
-    }
-    while (counter % Colcount != 0)
-    {
-        counter++;
-        bmkTable.AddCell(SetUpCell(cellheight, cellWidth, string.Empty));
     }
 
     FinishTable(0);
@@ -701,7 +827,7 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         int sizer = 1;
         if (key.Contains('\n'))
         {
-            sizer += key.Where(c => c == '\n').ToArray().Length;
+            sizer += key.Where(c => c == '\n').ToArray().Length - 1;
         }
         Cell data = new(sizer, 1);
         data.SetPadding(0);
@@ -718,8 +844,22 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
         return data;
     }
-}
 
+    void ResetTable()
+    {
+        for (int i = 0; i < heightTracker.Length; i++)
+        {
+            heightTracker[i] = 0;
+        }
+        counter = 0;
+        FinishTable(1);
+        pageNumber++;
+        _ = pdf.AddNewPage();
+        page = pdf.GetPage(pageNumber);
+        document.Add(new AreaBreak());
+        bmkTable = new(Colcount);
+    }
+}
 
 string ExportToCSV(string pdfPath, List<List<string>> bMKs)
 {
