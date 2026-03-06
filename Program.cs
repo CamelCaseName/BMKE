@@ -794,6 +794,12 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         bmkTable.AddCell(data);
     }
 
+    while (counter % Colcount != 0)
+    {
+        counter++;
+        bmkTable.AddCell(SetUpCell(cellheight, cellWidth, string.Empty));
+    }
+
     FinishTable(0);
 
     //set to 1 for full last row
