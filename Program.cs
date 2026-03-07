@@ -519,6 +519,11 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         {
 
         }
+        //tie bar puller stacks
+        if (file.Contains("XXXXXXX")) //todo
+        {
+
+        }
     }
     return BMKs;
 
@@ -527,9 +532,9 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         bool replaced = false;
         int LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
         int UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
-        if (coreCounter >= 12)
+        if (coreCounter >= 10)
         {
-            int halfCounter = coreCounter - 12;
+            int halfCounter = coreCounter - 10;
             LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
             UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
         }
@@ -566,15 +571,15 @@ static List<List<string>> Combine(List<List<string>> BMKs)
             coreCounter += 2;
             LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
             UpperNumber = 700 + coreCounter * 10 + 10 + (fp ? 4 : 0);
-            if (coreCounter >= 12)
+            if (coreCounter >= 10)
             {
-                int halfCounter = coreCounter - 12;
+                int halfCounter = coreCounter - 10;
                 LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
                 UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
             }
             i = file.IndexOf($"Q{LowerNumber}");
         }
-        if (!replaced && coreCounter < 22)
+        if (!replaced && coreCounter < 20)
         {
             ReplaceCores(file, fp, coreCounter + 2);
         }
@@ -585,9 +590,9 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         bool replaced = false;
         int LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
         int UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
-        if (coreCounter >= 12)
+        if (coreCounter >= 10)
         {
-            int halfCounter = coreCounter - 12;
+            int halfCounter = coreCounter - 10;
             LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
             UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
         }
@@ -652,9 +657,9 @@ static List<List<string>> Combine(List<List<string>> BMKs)
             coreCounter += 2;
             LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
             UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
-            if (coreCounter >= 12)
+            if (coreCounter >= 10)
             {
-                int halfCounter = coreCounter - 12;
+                int halfCounter = coreCounter - 10;
                 LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
                 UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
             }
@@ -662,7 +667,7 @@ static List<List<string>> Combine(List<List<string>> BMKs)
             secondProp = (fp ? 7000 : 6000) + 6 + coreCounter;
             i = file.IndexOf($"K{firstProp}");
         }
-        if (!replaced && coreCounter < 22)
+        if (!replaced && coreCounter < 20)
         {
             ReplacePropCores(file, fp, coreCounter + 2);
         }
@@ -676,11 +681,11 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         int i = file.IndexOf($"Q{LowerNumber}");
         while (i > 0)
         {
-            if (needleCounter == 64)
+            if (needleCounter == 62)
             {
                 UpperNumber = 8839;
             }
-            else if (needleCounter > 64)
+            else if (needleCounter > 62)
             {
                 int tempCounter = needleCounter - 64;
                 LowerNumber = 9820 + tempCounter;
@@ -693,10 +698,21 @@ static List<List<string>> Combine(List<List<string>> BMKs)
                 file.Remove($"Q{UpperNumber}");
                 file.Remove($"Q{LowerNumber}/{UpperNumber}");
             }
-            if (file.Contains($"R{UpperNumber}0"))
+            if (needleCounter == 62)
             {
-                temp += $"\nR{UpperNumber}0";
-                file.Remove($"R{UpperNumber}0");
+                if (file.Contains($"R{UpperNumber}"))
+                {
+                    temp += $"\nR{UpperNumber}";
+                    file.Remove($"R{UpperNumber}");
+                }
+            }
+            else
+            {
+                if (file.Contains($"R{UpperNumber}0"))
+                {
+                    temp += $"\nR{UpperNumber}0";
+                    file.Remove($"R{UpperNumber}0");
+                }
             }
             if (file.Contains($"F{LowerNumber}0"))
             {
