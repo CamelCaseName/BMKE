@@ -8,6 +8,7 @@ using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Layout;
 using iText.Layout.Element;
 using Newtonsoft.Json;
+using Org.BouncyCastle.Bcpg;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
@@ -499,40 +500,15 @@ static List<List<string>> Combine(List<List<string>> BMKs)
     foreach (var file in BMKs)
     {
         //cores fp
-        if (file.Contains("Q704"))
-        {
-            ReplaceCores(file, true);
-        }
+        ReplaceCores(file, true);
         //cores mp
-        if (file.Contains("Q700"))
-        {
-            ReplaceCores(file, false);
-        }
+        ReplaceCores(file, false);
         //cores prop fp
-        if (file.Contains("K7005"))
-        {
-            ReplacePropCores(file, true);
-        }
+        ReplacePropCores(file, true);
         //cores prop mp
-        if (file.Contains("K6005"))
-        {
-            ReplacePropCores(file, false);
-        }
-        //needle valves fp
-        if (file.Contains("Q820"))
-        {
-            ReplaceNeedles(file, 0);
-        }
-        //needle valves fp cont
-        if (file.Contains("Q852"))
-        {
-            ReplaceNeedles(file, 16);
-        }
-        //needle valves mp
-        if (file.Contains("XXXXXXX")) //todo
-        {
-
-        }
+        ReplacePropCores(file, false);
+        //needle valves fp mp
+        CheckAndReplaceNeedles(file);
         //parting plane fp
         if (file.Contains("XXXXXXX")) //todo
         {
@@ -546,11 +522,17 @@ static List<List<string>> Combine(List<List<string>> BMKs)
     }
     return BMKs;
 
-    static void ReplaceCores(List<string> file, bool fp)
+    static void ReplaceCores(List<string> file, bool fp, int coreCounter = 0)
     {
-        int coreCounter = 0;
-        int LowerNumber = 700 + (fp ? 4 : 0);
-        int UpperNumber = 710 + (fp ? 4 : 0);
+        bool replaced = false;
+        int LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
+        int UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
+        if (coreCounter >= 12)
+        {
+            int halfCounter = coreCounter - 12;
+            LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
+            UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
+        }
         int i = file.IndexOf($"Q{LowerNumber}");
         while (i > 0)
         {
@@ -579,20 +561,36 @@ static List<List<string>> Combine(List<List<string>> BMKs)
             }
 
             file[i] = temp;
+            replaced = true;
 
-            //todo respect weird change at 20 or sth
             coreCounter += 2;
             LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
             UpperNumber = 700 + coreCounter * 10 + 10 + (fp ? 4 : 0);
+            if (coreCounter >= 12)
+            {
+                int halfCounter = coreCounter - 12;
+                LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
+                UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
+            }
             i = file.IndexOf($"Q{LowerNumber}");
+        }
+        if (!replaced && coreCounter < 22)
+        {
+            ReplaceCores(file, fp, coreCounter + 2);
         }
     }
 
-    static void ReplacePropCores(List<string> file, bool fp)
+    static void ReplacePropCores(List<string> file, bool fp, int coreCounter = 0)
     {
-        int coreCounter = 0;
+        bool replaced = false;
         int LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
         int UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
+        if (coreCounter >= 12)
+        {
+            int halfCounter = coreCounter - 12;
+            LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
+            UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
+        }
         int firstProp = (fp ? 7000 : 6000) + 5 + coreCounter;
         int secondProp = (fp ? 7000 : 6000) + 6 + coreCounter;
         int i = file.IndexOf($"K{firstProp}");
@@ -649,65 +647,128 @@ static List<List<string>> Combine(List<List<string>> BMKs)
             }
 
             file[i] = temp;
+            replaced = true;
 
-            //todo respect weird change at 20 or sth
             coreCounter += 2;
             LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
             UpperNumber = 710 + coreCounter * 10 + (fp ? 4 : 0);
+            if (coreCounter >= 12)
+            {
+                int halfCounter = coreCounter - 12;
+                LowerNumber = 700 + halfCounter * 10 + (fp ? 5 : 1);
+                UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
+            }
             firstProp = (fp ? 7000 : 6000) + 5 + coreCounter;
             secondProp = (fp ? 7000 : 6000) + 6 + coreCounter;
             i = file.IndexOf($"K{firstProp}");
+        }
+        if (!replaced && coreCounter < 22)
+        {
+            ReplacePropCores(file, fp, coreCounter + 2);
         }
     }
 
     static void ReplaceNeedles(List<string> file, int needleCounter)
     {
         needleCounter *= 2;
-        int LowerNumber = 20 + needleCounter;
+        int LowerNumber = 820 + needleCounter;
         int UpperNumber = LowerNumber + 1;
-        int i = file.IndexOf($"Q8{LowerNumber}");
+        int i = file.IndexOf($"Q{LowerNumber}");
         while (i > 0)
         {
-            string temp = $"Q8{LowerNumber}";
-            if (file.Contains($"Q8{UpperNumber}"))
+            if (needleCounter == 64)
             {
-                temp += $"/8{UpperNumber}";
-                file.Remove($"Q8{UpperNumber}");
-                file.Remove($"Q8{LowerNumber}/8{UpperNumber}");
+                UpperNumber = 8839;
             }
-            if (file.Contains($"R8{UpperNumber}0"))
+            else if (needleCounter > 64)
             {
-                temp += $"\nR8{UpperNumber}0";
-                file.Remove($"R8{UpperNumber}0");
+                int tempCounter = needleCounter - 64;
+                LowerNumber = 9820 + tempCounter;
+                UpperNumber = tempCounter + 1;
             }
-            if (file.Contains($"F8{LowerNumber}0"))
+            string temp = $"Q{LowerNumber}";
+            if (file.Contains($"Q{UpperNumber}"))
             {
-                temp += $"\nF8{LowerNumber}0";
-                file.Remove($"F8{LowerNumber}0");
+                temp += $"/{UpperNumber}";
+                file.Remove($"Q{UpperNumber}");
+                file.Remove($"Q{LowerNumber}/{UpperNumber}");
             }
-            if (file.Contains($"R8{LowerNumber}0"))
+            if (file.Contains($"R{UpperNumber}0"))
             {
-                temp += $"\nR8{LowerNumber}0";
-                file.Remove($"R8{LowerNumber}0");
+                temp += $"\nR{UpperNumber}0";
+                file.Remove($"R{UpperNumber}0");
             }
-            if (file.Contains($"R8{LowerNumber}1"))
+            if (file.Contains($"F{LowerNumber}0"))
             {
-                temp += $"\nR8{LowerNumber}1";
-                file.Remove($"R8{LowerNumber}1");
+                temp += $"\nF{LowerNumber}0";
+                file.Remove($"F{LowerNumber}0");
             }
-            if (file.Contains($"R8{UpperNumber}1"))
+            if (file.Contains($"R{LowerNumber}0"))
             {
-                temp += $"/8{UpperNumber}1";
-                file.Remove($"R8{UpperNumber}1");
+                temp += $"\nR{LowerNumber}0";
+                file.Remove($"R{LowerNumber}0");
             }
-            i = file.IndexOf($"Q8{LowerNumber}");
+            if (file.Contains($"R{LowerNumber}1"))
+            {
+                temp += $"\nR{LowerNumber}1";
+                file.Remove($"R{LowerNumber}1");
+            }
+            if (file.Contains($"R{UpperNumber}1"))
+            {
+                temp += $"/{UpperNumber}1";
+                file.Remove($"R{UpperNumber}1");
+            }
+            i = file.IndexOf($"Q{LowerNumber}");
             file[i] = temp;
 
-            //todo respect weird change at 20 or sth
             needleCounter += 2;
-            LowerNumber = 20 + needleCounter;
+            LowerNumber = 820 + needleCounter;
             UpperNumber = LowerNumber + 1;
-            i = i = file.IndexOf($"Q8{LowerNumber}");
+            i = i = file.IndexOf($"Q{LowerNumber}");
+        }
+    }
+
+    static void CheckAndReplaceNeedles(List<string> file)
+    {
+        if (file.Contains("Q820"))
+        {
+            ReplaceNeedles(file, 0);
+        }
+        else if (file.Contains("Q828"))
+        {
+            ReplaceNeedles(file, 4);
+        }
+        else if (file.Contains("Q836"))
+        {
+            ReplaceNeedles(file, 8);
+        }
+        else if (file.Contains("Q844"))
+        {
+            ReplaceNeedles(file, 12);
+        }
+        else if (file.Contains("Q852"))
+        {
+            ReplaceNeedles(file, 16);
+        }
+        else if (file.Contains("Q860"))
+        {
+            ReplaceNeedles(file, 20);
+        }
+        else if (file.Contains("Q868"))
+        {
+            ReplaceNeedles(file, 24);
+        }
+        else if (file.Contains("Q876"))
+        {
+            ReplaceNeedles(file, 28);
+        }
+        else if (file.Contains("Q9820"))
+        {
+            ReplaceNeedles(file, 32);
+        }
+        else if (file.Contains("Q9828"))
+        {
+            ReplaceNeedles(file, 36);
         }
     }
 }
