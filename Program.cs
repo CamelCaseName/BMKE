@@ -7,13 +7,16 @@ using Newtonsoft.Json;
 using Org.BouncyCastle.Bcpg;
 using Org.BouncyCastle.Tls;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 
 JsonConvert.DefaultSettings = () => new JsonSerializerSettings { MaxDepth = 128 };
 string? pdfPath = string.Empty;
 string orderNumber = string.Empty;
+List<string> matNumbers = [];
 int cellheight = 9;
 int cellWidth = 37;
 int Colcount = 7;
@@ -380,6 +383,14 @@ List<List<string>> ExtractBMK(string pdfPath)
             foreach (var line in pageText.Split('\n'))
             {
                 Alllines[^1].AddRange(line.Split(' '));
+                if (flagG && line.Contains("BLOCKABRUF"))
+                {
+                    var match = MatNumberRegex().Match(line);
+                    if (matNumbers.Count == Alllines.Count - 1 && match.Success)
+                    {
+                        matNumbers.Add(match.Value);
+                    }
+                }
             }
         }
     }
@@ -527,7 +538,6 @@ static List<List<string>> Combine(List<List<string>> BMKs)
     }
     return BMKs;
 
-    //todo test
     static void ReplaceCores(List<string> file, bool fp)
     {
         int coreCounter = 0;
@@ -732,6 +742,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
                         break;
                     }
                     pageFullCounter++;
+                    pageFullCounter += BMKs[i][x].Count(c => c == '\n');
                     partlist.Add(BMKs[i][x]);
                     SpentItemCounter++;
                 }
@@ -740,7 +751,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
             {
                 partlist = BMKs[i];
             }
-            SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document);
+            SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document,i);
             AddBMKAsTable(partlist, pdf, document, page);
             document.Close();
             outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter}.pdf");
@@ -751,7 +762,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
     outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter - 2}.pdf");
     return outputPath;
 
-    void SetUpPage(int pageNumber, int pageCount, out PdfDocument pdf, out PdfPage page, out Document document)
+    void SetUpPage(int pageNumber, int pageCount, out PdfDocument pdf, out PdfPage page, out Document document, int Groupcounter)
     {
         PdfWriter writer = new(outputPath);
         pdf = new(writer);
@@ -759,8 +770,15 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
         pdf.SetDefaultPageSize(iText.Kernel.Geom.PageSize.A4.Rotate());
         page = pdf.AddNewPage();
         document = new(pdf);
-        document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(pageNumber > 0 ? $"{{Seite {pageNumber}/{pageCount}}}" : string.Empty)}"));
-        document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen. Mehrfachaufkleber sind ein vielfaches hoch, aber gleich breit."));
+        document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(flagG ? $"[Material: {matNumbers[Groupcounter]}]" : string.Empty)} {(pageNumber > 0 ? $"{{Seite {pageNumber}/{pageCount}}}" : string.Empty)}"));
+        if (flagC)
+        {
+            document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen. \nMehrfachaufkleber sind ein vielfaches hoch, aber gleich breit. 2 Zeilen: 18mm | 3 Zeilen: 27mm | 4 Zeilen 27mm | 5 Zeilen: 36mm"));
+        }
+        else
+        {
+            document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen."));
+        }
     }
 }
 
@@ -833,7 +851,7 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         int sizer = 1;
         if (key.Contains('\n'))
         {
-            sizer += MathF.Round(key.Where(c => c == '\n').ToArray().Length / 1.25f);
+            sizer += (int)MathF.Round(key.Where(c => c == '\n').ToArray().Length / 1.25f);
         }
         Cell data = new(sizer, 1);
         data.SetPadding(0);
@@ -870,7 +888,7 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
 string ExportToCSV(string pdfPath, List<List<string>> bMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
-    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK-0.csv");
+    string outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-0.csv");
     char seperator = ',';
     StringBuilder sb = new();
     int fileCounter = 1;
@@ -889,7 +907,7 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
             {
                 sb.Append($"{key}{seperator}");
             }
-            //todo split correctly here if more than col*row but less than what should be for file
+
             if (!flagS && ((counter >= Rowcount * Colcount)))
             {
                 counter = 0;
@@ -941,4 +959,10 @@ List<List<string>> Sort(List<List<string>> BMKs)
     }
 
     return BMKs;
+}
+
+partial class Program
+{
+    [GeneratedRegex("\\d{6,10}")]
+    private static partial Regex MatNumberRegex();
 }
