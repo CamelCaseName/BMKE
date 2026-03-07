@@ -1,15 +1,16 @@
-﻿using iText.Kernel.Pdf;
+﻿//uses isofonft from this project here under lgplv3+fe https://github.com/hikikomori82/osifont
+
+using iText.IO.Font;
+using iText.Kernel.Font;
+using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Layout;
 using iText.Layout.Element;
 using Newtonsoft.Json;
-using Org.BouncyCastle.Bcpg;
-using Org.BouncyCastle.Tls;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Globalization;
-using System.Runtime.InteropServices;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -45,6 +46,13 @@ else
     pdfPath = GetAllFromConsole();
 }
 ArgumentNullException.ThrowIfNull(pdfPath, nameof(pdfPath));
+
+PdfFont isofont;
+//_ = Assembly.GetExecutingAssembly().GetManifestResourceNames();
+var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("BMKE.osifont-lgpl3fe.ttf");
+var bytes = new byte[stream?.Length ?? 0];
+stream?.ReadExactly(bytes, 0, (int)stream.Length);
+isofont = PdfFontFactory.CreateFont(FontProgramFactory.CreateFont(bytes));
 
 Console.WriteLine("Hydraulic schematic read, outputting special BMK:\n");
 
@@ -751,7 +759,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
             {
                 partlist = BMKs[i];
             }
-            SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document,i);
+            SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document, i);
             AddBMKAsTable(partlist, pdf, document, page);
             document.Close();
             outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter}.pdf");
@@ -770,6 +778,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
         pdf.SetDefaultPageSize(iText.Kernel.Geom.PageSize.A4.Rotate());
         page = pdf.AddNewPage();
         document = new(pdf);
+        document.SetFont(isofont);
         document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(flagG ? $"[Material: {matNumbers[Groupcounter]}]" : string.Empty)} {(pageNumber > 0 ? $"{{Seite {pageNumber}/{pageCount}}}" : string.Empty)}"));
         if (flagC)
         {
@@ -862,7 +871,7 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         data.SetWidth(mmToPt(cellWidth));
         data.SetMinWidth(mmToPt(cellWidth));
         data.SetMaxWidth(mmToPt(cellWidth));
-        data.Add(new Paragraph(key));
+        data.Add(new Paragraph(key).SetMultipliedLeading(0.8f));
         data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
         data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
         data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
