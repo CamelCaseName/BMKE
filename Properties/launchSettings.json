@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "BMKE": {
-      "commandName": "Project",
-      "commandLineArgs": "\"%userprofile%\\Downloads\\Hydraulikplan.pdf\" -s -c -p"
-    }
-  }
-}

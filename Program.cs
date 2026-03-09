@@ -53,7 +53,8 @@ PdfFont isofont;
 var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("BMKE.osifont-lgpl3fe.ttf");
 var bytes = new byte[stream?.Length ?? 0];
 stream?.ReadExactly(bytes, 0, (int)stream.Length);
-isofont = PdfFontFactory.CreateFont(FontProgramFactory.CreateFont(bytes));
+
+FontProgram isoFontProgram = FontProgramFactory.CreateFont(bytes);
 
 Console.WriteLine("Hydraulic schematic read, outputting special BMK:\n");
 
@@ -392,13 +393,23 @@ List<List<string>> ExtractBMK(string pdfPath)
             foreach (var line in pageText.Split('\n'))
             {
                 Alllines[^1].AddRange(line.Split(' '));
-                if (flagG && line.Contains("BLOCKABRUF"))
+                if (!flagG || !line.Contains("BLOCKABRUF") || matNumbers.Count != Alllines.Count - 1)
                 {
-                    var match = MatNumberRegex().Match(line);
-                    if (matNumbers.Count == Alllines.Count - 1 && match.Success)
-                    {
-                        matNumbers.Add(match.Value);
-                    }
+                    continue;
+                }
+
+                var match = MatNumberRegex().Match(line);
+                if (match.Success)
+                {
+                    matNumbers.Add(match.Value);
+                }
+                else if (line.Contains("TAKT 1 x"))
+                {
+                    matNumbers.Add("Takt 1");
+                }
+                else if (line.Contains("TAKT 2 x"))
+                {
+                    matNumbers.Add("Takt 2");
                 }
             }
         }
@@ -854,6 +865,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
         //A4 landscape
         pdf.SetDefaultPageSize(iText.Kernel.Geom.PageSize.A4.Rotate());
         page = pdf.AddNewPage();
+        isofont = PdfFontFactory.CreateFont(isoFontProgram);
         document = new(pdf);
         document.SetFont(isofont);
         document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(flagG ? $"[Material: {matNumbers[Groupcounter]}]" : string.Empty)} {(pageNumber > 0 ? $"{{Seite {pageNumber}/{pageCount}}}" : string.Empty)}"));

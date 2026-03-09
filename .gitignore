@@ -7,3 +7,5 @@
 /obj
 /bin/Release/net10.0
 /Properties/PublishProfiles/FolderProfile.pubxml
+/Properties/PublishProfiles/FolderProfile.pubxml.user
+/Properties/launchSettings.json
