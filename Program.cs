@@ -49,7 +49,6 @@ else
 ArgumentNullException.ThrowIfNull(pdfPath, nameof(pdfPath));
 
 PdfFont isofont;
-//_ = Assembly.GetExecutingAssembly().GetManifestResourceNames();
 var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("BMKE.osifont-lgpl3fe.ttf");
 var bytes = new byte[stream?.Length ?? 0];
 stream?.ReadExactly(bytes, 0, (int)stream.Length);
@@ -67,10 +66,6 @@ if (flagC)
 }
 
 //todo also extract bmk for the other pages on a per-page basis, and then compare via material number against the complete block drawing??
-
-//todo add material number per page into file name (and pdf document)
-
-//todo change pdf font to isofont
 
 string outputPath = ExportToCSV(pdfPath, BMKs);
 AnnounceWrittenFile(flagS, outputPath);
@@ -1016,6 +1011,7 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         element.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
         element.SetMargin(0);
         element.SetPadding(0);
+        element.SetMarginTop(-sizer * (flagG && (sizer > 1) ? 3.3f : 2.5f));
         data.Add(element);
         data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
         data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
