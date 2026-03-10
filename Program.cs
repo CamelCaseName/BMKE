@@ -77,7 +77,7 @@ if (flagP)
 
 Console.WriteLine("Hit any key to exit.");
 
-_ = Console.ReadLine();
+_ = Console.ReadKey();
 return;
 
 
@@ -381,7 +381,8 @@ List<List<string>> ExtractBMK(string pdfPath)
             foreach (var line in pageText.Split('\n'))
             {
                 Alllines[^1].AddRange(line.Split(' '));
-                if (!line.Contains("BLOCKABRUF") || matNumbers.Count != Alllines.Count - 1)
+                //todo exclude author short form on revision, need plan the issue happens with
+                if (!line.Contains("BLOCKABRUF") || line.Contains("BEARB") || line.Contains("GEPR") || matNumbers.Count != Alllines.Count - 1)
                 {
                     continue;
                 }
@@ -403,6 +404,20 @@ List<List<string>> ExtractBMK(string pdfPath)
         }
     }
     reader.Close();
+
+    Dictionary<string, List<string>> GroupedLines = [];
+    for (int i = 0; i < matNumbers.Count; i++)
+    {
+        if (GroupedLines.TryGetValue(matNumbers[i], out var list))
+        {
+            list.AddRange(Alllines[i]);
+        }
+        else
+        {
+            GroupedLines.Add(matNumbers[i], Alllines[i]);
+        }
+    }
+    Alllines = [.. GroupedLines.Values];
 
 
     List<HashSet<string>> AllBMKs = [];
@@ -488,6 +503,8 @@ List<List<string>> ExtractBMK(string pdfPath)
 
     for (int f = 0; f < AllBMKs.Count; f++)
     {
+        AllBMKs[f].Remove(string.Empty);
+        AllBMKs[f].Remove(" ");
         returner.Add([.. AllBMKs[f]]);
     }
 
@@ -1113,29 +1130,51 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
 
             if (key.Contains('\n'))
             {
-                sb.Append($"\"{key}\"{seperator}");
+                sb.Append($"\"{key}\"");
             }
             else
             {
-                sb.Append($"{key}{seperator}");
+                sb.Append($"{key}");
+            }
+
+            if (counter % Colcount == 0 && counter > 0)
+            {
+                sb.Append('\n');
+            }
+            else
+            {
+                sb.Append(seperator);
             }
 
             if (!flagS && ((counter >= Rowcount * Colcount)))
             {
                 counter = 0;
+                if (sb[^1] != '\n')
+                {
+                    sb.Append('\n');
+                }
                 File.WriteAllText(outputPath, sb.ToString());
                 sb.Clear();
 
                 outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
             }
-            if (counter % Colcount == 0 && counter > 0)
+        }
+
+        if (flagG)
+        {
+            if (counter % Colcount != 0)
+            {
+                while ((counter + 1) % Colcount != 0)
+                {
+                    counter++;
+                    sb.Append(seperator);
+                }
+            }
+            counter = 0;
+            if (sb[^1] != '\n')
             {
                 sb.Append('\n');
             }
-        }
-        if (flagG)
-        {
-            counter = 0;
             File.WriteAllText(outputPath, sb.ToString());
             sb.Clear();
 
@@ -1148,6 +1187,19 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
     }
     else
     {
+        if (counter % Colcount != 0)
+        {
+            while ((counter + 1) % Colcount != 0)
+            {
+                counter++;
+                sb.Append(seperator);
+            }
+        }
+        if (sb[^1] != '\n')
+        {
+            sb.Append('\n');
+        }
+
         File.WriteAllText(outputPath, sb.ToString());
     }
     return outputPath;
