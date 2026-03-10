@@ -323,7 +323,7 @@ static bool CheckFileIsValid(string? candidate)
         Console.WriteLine("candidate path was null??");
         return false;
     }
-    candidate = candidate.Trim();
+    candidate = candidate.Trim().Trim('\"').Trim('\'');
     if (!File.Exists(candidate))
     {
         Console.WriteLine("### " + candidate + " is not a valid Path ###");
@@ -506,37 +506,88 @@ List<List<string>> ExtractBMK(string pdfPath)
     return returner;
 }
 
-static List<List<string>> Combine(List<List<string>> BMKs)
+List<List<string>> Combine(List<List<string>> BMKs)
 {
-    foreach (var file in BMKs)
+    for (int x = 0; x < BMKs.Count; x++)
     {
+        List<string>? file = BMKs[x];
+        bool isMiddlPlaten = flagG;
+        if (flagG)
+        {
+            isMiddlPlaten = matNumbers[x].Contains("Takt");
+        }
         //cores fp
         ReplaceCores(file, true);
         //cores mp
         ReplaceCores(file, false);
         //cores prop fp
-        ReplacePropCores(file, true);
+        ReplacePropCores(file, true, forceMPLayout: isMiddlPlaten);
         //cores prop mp
         ReplacePropCores(file, false);
         //needle valves fp mp
         CheckAndReplaceNeedles(file);
         //parting plane fp
-        if (file.Contains("XXXXXXX")) //todo
-        {
-
-        }
+        CheckAndReplacePartingPlane(file, true);
         //parting plane mp
+        CheckAndReplacePartingPlane(file, false);
+        //tie bar puller stacks
         if (file.Contains("XXXXXXX")) //todo
         {
 
         }
-        //tie bar puller stacks
+        //pull off cylinder
+        if (file.Contains("XXXXXXX")) //todo
+        {
+
+        }
+        //pull off cylinder
         if (file.Contains("XXXXXXX")) //todo
         {
 
         }
     }
     return BMKs;
+
+    static void CheckAndReplacePartingPlane(List<string> file, bool fp)
+    {
+        int number = (97000 + (fp ? 4 : 0));
+        int number2 = number + 100;
+        int number3 = number + 110;
+        for (int x = 0; x < 2; x++)
+        {
+            int i = file.IndexOf($"K{number}");
+            while (i >= 0)
+            {
+                string temp = $"K{number}";
+                if (file.Contains($"F{number2}"))
+                {
+                    temp += $"\nF{number2}";
+                    file.Remove($"F{number2}");
+                }
+                if (file.Contains($"F{number3}"))
+                {
+                    temp += $"\nF{number3}";
+                    file.Remove($"F{number3}");
+                }
+                if (file.Contains($"F{number}"))
+                {
+                    temp += $"\nF{number}";
+                    file.Remove($"F{number}");
+                }
+                if (file.Contains($"R{number}"))
+                {
+                    temp += $"\nR{number}";
+                    file.Remove($"R{number}");
+                }
+                i = file.IndexOf($"K{number}");
+                file[i] = temp;
+                i = file.IndexOf($"K{number}");
+            }
+            number *= 10;
+            number2 *= 10;
+            number3 *= 10;
+        }
+    }
 
     static void ReplaceCores(List<string> file, bool fp, int coreCounter = 0)
     {
@@ -550,7 +601,7 @@ static List<List<string>> Combine(List<List<string>> BMKs)
             UpperNumber = 710 + halfCounter * 10 + (fp ? 5 : 1);
         }
         int i = file.IndexOf($"Q{LowerNumber}");
-        while (i > 0)
+        while (i >= 0)
         {
             string temp = $"Q{LowerNumber}";
             if (file.Contains($"Q{UpperNumber}"))
@@ -596,7 +647,7 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         }
     }
 
-    static void ReplacePropCores(List<string> file, bool fp, int coreCounter = 0)
+    static void ReplacePropCores(List<string> file, bool fp, int coreCounter = 0, bool forceMPLayout = false)
     {
         bool replaced = false;
         int LowerNumber = 700 + coreCounter * 10 + (fp ? 4 : 0);
@@ -610,10 +661,10 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         int firstProp = (fp ? 7000 : 6000) + 5 + coreCounter;
         int secondProp = (fp ? 7000 : 6000) + 6 + coreCounter;
         int i = file.IndexOf($"K{firstProp}");
-        while (i > 0)
+        while (i >= 0)
         {
             string temp = $"K{firstProp}";
-            if (fp)
+            if (fp && !forceMPLayout)
             {
                 if (file.Contains($"K{secondProp}"))
                 {
@@ -680,7 +731,7 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         }
         if (!replaced && coreCounter < 20)
         {
-            ReplacePropCores(file, fp, coreCounter + 2);
+            ReplacePropCores(file, fp, coreCounter + 2, forceMPLayout: forceMPLayout);
         }
     }
 
@@ -690,7 +741,7 @@ static List<List<string>> Combine(List<List<string>> BMKs)
         int LowerNumber = 820 + needleCounter;
         int UpperNumber = LowerNumber + 1;
         int i = file.IndexOf($"Q{LowerNumber}");
-        while (i > 0)
+        while (i >= 0)
         {
             if (needleCounter == 62)
             {
@@ -960,7 +1011,12 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         data.SetWidth(mmToPt(cellWidth));
         data.SetMinWidth(mmToPt(cellWidth));
         data.SetMaxWidth(mmToPt(cellWidth));
-        data.Add(new Paragraph(key).SetMultipliedLeading(0.8f));
+        Paragraph element = new Paragraph(key).SetMultipliedLeading(0.8f);
+        element.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
+        element.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
+        element.SetMargin(0);
+        element.SetPadding(0);
+        data.Add(element);
         data.SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
         data.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
         data.SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
