@@ -371,24 +371,17 @@ List<List<string>> ExtractBMK(string pdfPath)
     PdfReader reader = new(pdfPath);
     PdfDocument pdf = new(reader);
     List<List<string>> Alllines = [];
-    if (!flagG)
-    {
-        Alllines.Add([]);
-    }
     for (int page = 1; page <= pdf.GetNumberOfPages(); page++)
     {
         //todo maybe lookup material number against sticker list
         var pageText = PdfTextExtractor.GetTextFromPage(pdf.GetPage(page));
         if (pageText.Contains("INHALT BLOCKABRUF"))
         {
-            if (flagG)
-            {
-                Alllines.Add([]);
-            }
+            Alllines.Add([]);
             foreach (var line in pageText.Split('\n'))
             {
                 Alllines[^1].AddRange(line.Split(' '));
-                if (!flagG || !line.Contains("BLOCKABRUF") || matNumbers.Count != Alllines.Count - 1)
+                if (!line.Contains("BLOCKABRUF") || matNumbers.Count != Alllines.Count - 1)
                 {
                     continue;
                 }
@@ -506,11 +499,7 @@ List<List<string>> Combine(List<List<string>> BMKs)
     for (int x = 0; x < BMKs.Count; x++)
     {
         List<string>? file = BMKs[x];
-        bool isMiddlPlaten = flagG;
-        if (flagG)
-        {
-            isMiddlPlaten = matNumbers[x].Contains("Takt");
-        }
+        bool isMiddlPlaten = matNumbers[x].Contains("Takt");
         //cores fp
         ReplaceCores(file, true);
         //cores mp
@@ -531,17 +520,74 @@ List<List<string>> Combine(List<List<string>> BMKs)
 
         }
         //pull off cylinder
-        if (file.Contains("XXXXXXX")) //todo
-        {
-
-        }
+        CheckAndReplacePullOffCylinder(file, true);
         //pull off cylinder
-        if (file.Contains("XXXXXXX")) //todo
-        {
-
-        }
+        CheckAndReplacePullOffCylinder(file, false);
+        //todo maybe possible for mold coupling?
+        //todo maybe possible for stäubli mold clamps?
     }
     return BMKs;
+
+
+    static void CheckAndReplacePullOffCylinder(List<string> file, bool fp)
+    {
+        int number = 870 + (fp ? 1 : 2);
+        int number2 = 880 + (fp ? 1 : 2);
+        int i = file.IndexOf($"Q{number}0");
+        //todo find version with the other valves
+        if (i >= 0)
+        {
+            string temp = $"Q{number}0";
+            if (file.Contains($"Q{number2}0"))
+            {
+                temp += $"/{number2}0";
+                file.Remove($"Q{number2}0");
+                file.Remove($"Q{number}0/{number2}0");
+            }
+            if (file.Contains($"R{number}1"))
+            {
+                temp += $"\nR{number}1";
+                file.Remove($"R{number}1");
+            }
+            if (file.Contains($"F{number}00"))
+            {
+                temp += $"\nF{number}00";
+                file.Remove($"F{number}00");
+            }
+            else if (file.Contains($"F{number}0"))
+            {
+                temp += $"\nF{number}0";
+                file.Remove($"F{number}0");
+            }
+            if (file.Contains($"X{number}2"))
+            {
+                temp += $"\nX{number}2";
+                file.Remove($"X{number}2");
+            }
+            if (file.Contains($"R{number}00"))
+            {
+                temp += $"\nR{number}00";
+                file.Remove($"R{number}00");
+            }
+            else if (file.Contains($"R{number}0"))
+            {
+                temp += $"\nR{number}0";
+                file.Remove($"R{number}0");
+            }
+            if (file.Contains($"R{number}2"))
+            {
+                temp += $"\nR{number}2";
+                file.Remove($"R{number}2");
+            }
+            if (file.Contains($"R{number2}2"))
+            {
+                temp += $"/{number2}2";
+                file.Remove($"R{number2}2");
+            }
+            i = file.IndexOf($"Q{number}0");
+            file[i] = temp;
+        }
+    }
 
     static void CheckAndReplacePartingPlane(List<string> file, bool fp)
     {
@@ -622,6 +668,7 @@ List<List<string>> Combine(List<List<string>> BMKs)
                 file.Remove($"R{LowerNumber}0/{UpperNumber}0");
             }
 
+            i = file.IndexOf($"Q{LowerNumber}");
             file[i] = temp;
             replaced = true;
 
@@ -708,6 +755,7 @@ List<List<string>> Combine(List<List<string>> BMKs)
                 }
             }
 
+            i = file.IndexOf($"K{firstProp}");
             file[i] = temp;
             replaced = true;
 
@@ -863,6 +911,16 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
         }
     }
     int pagecounter = 1;
+    if (!flagG)
+    {
+        List<string> newAllList = [];
+        for (int i = 0; i < BMKs.Count; i++)
+        {
+            newAllList.AddRange(BMKs[i]);
+        }
+        BMKs.Clear();
+        BMKs.Add(newAllList);
+    }
     for (int i = 0; i < BMKs.Count; i++)
     {
         int PerPageFileCount = 1;
@@ -1042,9 +1100,13 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
     char seperator = ',';
     StringBuilder sb = new();
     int fileCounter = 1;
+    int counter = 0;
     foreach (var file in BMKs)
     {
-        int counter = 0;
+        if (flagG)
+        {
+            counter = 0;
+        }
         foreach (string key in file)
         {
             counter++;
@@ -1071,13 +1133,23 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
                 sb.Append('\n');
             }
         }
-        counter = 0;
-        File.WriteAllText(outputPath, sb.ToString());
-        sb.Clear();
+        if (flagG)
+        {
+            counter = 0;
+            File.WriteAllText(outputPath, sb.ToString());
+            sb.Clear();
 
-        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
+            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
+        }
     }
-    outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter - 2}.csv");
+    if (flagG)
+    {
+        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter - 2}.csv");
+    }
+    else
+    {
+        File.WriteAllText(outputPath, sb.ToString());
+    }
     return outputPath;
 }
 
