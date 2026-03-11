@@ -419,6 +419,8 @@ List<List<string>> ExtractBMK(string pdfPath)
     }
     Alllines = [.. GroupedLines.Values];
 
+    matNumbers = [.. GroupedLines.Keys];
+
 
     List<HashSet<string>> AllBMKs = [];
 
@@ -429,7 +431,7 @@ List<List<string>> ExtractBMK(string pdfPath)
     //L for leakage return lines
     //M for cylinders/motors
     //N for NG valve size
-    char[] disallowedChars = ['A', 'P', 'G', 'T', 'L', 'M', 'N'];
+    char[] disallowedChars = ['A', 'P', 'G', 'T', 'L', 'M', 'N', 'H', 'W'];
 
     foreach (var lines in Alllines)
     {
@@ -1113,13 +1115,14 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
 string ExportToCSV(string pdfPath, List<List<string>> bMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
-    string outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-0.csv");
+    string outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[0]}-" : string.Empty)}BMK-0.csv");
     char seperator = ',';
     StringBuilder sb = new();
     int fileCounter = 1;
     int counter = 0;
-    foreach (var file in BMKs)
+    for (int fileIter = 0; fileIter < BMKs.Count; fileIter++)
     {
+        List<string>? file = BMKs[fileIter];
         if (flagG)
         {
             counter = 0;
@@ -1156,7 +1159,8 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
                 File.WriteAllText(outputPath, sb.ToString());
                 sb.Clear();
 
-                outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
+
+                outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[(int)MathF.Min(fileIter, matNumbers.Count - 1)]}-" : string.Empty)}BMK-{fileCounter++}.csv");
             }
         }
 
@@ -1178,12 +1182,12 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
             File.WriteAllText(outputPath, sb.ToString());
             sb.Clear();
 
-            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter++}.csv");
+            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[(int)MathF.Min(fileIter + 1, matNumbers.Count - 1)]}-" : string.Empty)}BMK-{fileCounter++}.csv");
         }
     }
     if (flagG)
     {
-        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{fileCounter - 2}.csv");
+        outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[^1]}-" : string.Empty)}BMK-{fileCounter - 2}.csv");
     }
     else
     {
