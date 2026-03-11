@@ -10,6 +10,7 @@ using iText.Layout.Element;
 using Newtonsoft.Json;
 using Org.BouncyCastle.Bcpg;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
@@ -916,20 +917,8 @@ List<List<string>> Combine(List<List<string>> BMKs)
 string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellWidth, List<List<string>> BMKs)
 {
     string localDir = Path.GetDirectoryName(pdfPath) ?? string.Empty;
-    string outputPath = Path.Combine(localDir, orderNumber + "-Hydraulik-BMK-0.pdf");
 
-    int totalFileCount = BMKs.Count;
-    if (!flagS)
-    {
-        foreach (var list in BMKs)
-        {
-            if (list.Count > Rowcount * Colcount)
-            {
-                totalFileCount += (int)MathF.Floor(list.Count / (Rowcount * Colcount));
-            }
-        }
-    }
-    int pagecounter = 1;
+    int pagecounter = 0;
     if (!flagG)
     {
         List<string> newAllList = [];
@@ -944,44 +933,59 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
     {
         int PerPageFileCount = 1;
         int SpentItemCounter = 0;
-        if (!flagS && BMKs[i].Count > Rowcount * Colcount)
-        {
-            PerPageFileCount += (int)MathF.Floor(BMKs[i].Count / (Rowcount * Colcount));
-        }
         do
         {
+            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[(int)MathF.Min(i, matNumbers.Count - 1)]}-" : string.Empty)}BMK-{pagecounter}.pdf");
+
             List<string> partlist = new((int)MathF.Min(BMKs[i].Count, Rowcount * Colcount));
             if (!flagS)
             {
-                int pageFullCounter = 0;
-                for (int x = SpentItemCounter; x < BMKs[i].Count; x++)
+                byte[,] heightTracker = new byte[Colcount, Rowcount];
+                for (int s = SpentItemCounter; s < BMKs[i].Count; s++)
                 {
-                    if (pageFullCounter >= Rowcount * Colcount)
+                    int height = 1 + (int)MathF.Round(BMKs[i][s].Count('\n') / 1.25f);
+
+                    bool foundSpot = false;
+                    for (int y = 0; y < heightTracker.GetLength(1); y++)
                     {
+                        for (int x = 0; x < heightTracker.GetLength(0); x++)
+                        {
+                            if (heightTracker[x, y] == 0 && (y + height <= heightTracker.GetLength(1)))
+                            {
+                                for (int h = 0; h < height; h++)
+                                {
+                                    heightTracker[x, y + h] = 1;
+                                }
+                                SpentItemCounter++;
+                                foundSpot = true;
+                                partlist.Add(BMKs[i][s]);
+                                goto found;
+                            }
+                        }
+                    }
+                found:
+                    if (!foundSpot)
+                    {
+                        PerPageFileCount++;
                         break;
                     }
-                    pageFullCounter++;
-                    pageFullCounter += BMKs[i][x].Count(c => c == '\n');
-                    partlist.Add(BMKs[i][x]);
-                    SpentItemCounter++;
                 }
             }
             else
             {
                 partlist = BMKs[i];
             }
-            SetUpPage(pagecounter, totalFileCount, out PdfDocument pdf, out PdfPage page, out Document document, i);
+            SetUpPage(pagecounter + 1, out PdfDocument pdf, out PdfPage page, out Document document, i);
             AddBMKAsTable(partlist, pdf, document, page);
             document.Close();
-            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter}.pdf");
             pagecounter++;
         } while (PerPageFileCount-- > 1);
     }
     //undo counter increase for last one. stupid but easy fix
-    outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-BMK-{pagecounter - 2}.pdf");
+    outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[^1]}-" : string.Empty)}BMK-{pagecounter - 1}.pdf");
     return outputPath;
 
-    void SetUpPage(int pageNumber, int pageCount, out PdfDocument pdf, out PdfPage page, out Document document, int Groupcounter)
+    void SetUpPage(int pageNumber, out PdfDocument pdf, out PdfPage page, out Document document, int Groupcounter)
     {
         PdfWriter writer = new(outputPath);
         pdf = new(writer);
@@ -991,7 +995,7 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
         isofont = PdfFontFactory.CreateFont(isoFontProgram);
         document = new(pdf);
         document.SetFont(isofont);
-        document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(flagG ? $"[Material: {matNumbers[Groupcounter]}]" : string.Empty)} {(pageNumber > 0 ? $"{{Seite {pageNumber}/{pageCount}}}" : string.Empty)}"));
+        document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(flagG ? $"[Material: {matNumbers[Groupcounter]}]" : string.Empty)}"));
         if (flagC)
         {
             document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen. \nMehrfachaufkleber sind ein vielfaches hoch, aber gleich breit. 2 Zeilen: 18mm | 3 Zeilen: 27mm | 4 Zeilen 27mm | 5 Zeilen: 36mm"));
@@ -1005,45 +1009,77 @@ string ExportToPdf(string pdfPath, string orderNumber, int cellheight, int cellW
 
 void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document, PdfPage page)
 {
-    int counter = 0;
     int pageNumber = 1;
     int tableLeft = 30;
     int tableBottom = 70;
     Table bmkTable = new(Colcount);
     float PageWidth = page.GetPageSizeWithRotation().GetWidth();
-    int colCounter = 0;
-    int[] heightTracker = new int[Colcount];
+    byte[,] heightTracker = new byte[Colcount, Rowcount];
     foreach (string key in BMKs)
     {
-        //if (counter >= Rowcount * Colcount)
-        //{
-        //    ResetTable();
-        //}
-
         Cell data = SetUpCell(cellheight, cellWidth, key);
         int height = data.GetRowspan();
-        colCounter = (colCounter + 1) % Colcount;
-        if (height + heightTracker[colCounter] > Rowcount)
+
+        bool foundSpot = false;
+        for (int y = 0; y < heightTracker.GetLength(1); y++)
+        {
+            for (int x = 0; x < heightTracker.GetLength(0); x++)
+            {
+                if (heightTracker[x, y] == 0 && (y + height <= heightTracker.GetLength(1)))
+                {
+                    for (int h = 0; h < height; h++)
+                    {
+                        heightTracker[x, y + h] = 1;
+                    }
+                    bmkTable.AddCell(data);
+                    foundSpot = true;
+                    goto found;
+                }
+            }
+        }
+    found:
+        if (!foundSpot)
         {
             ResetTable();
-            colCounter = 0;
+            height = data.GetRowspan();
+            for (int h = 0; h < height; h++)
+            {
+                heightTracker[0, h] = 1;
+            }
+            bmkTable.AddCell(data);
         }
-        heightTracker[colCounter] += height;
-        counter += height;
-        bmkTable.AddCell(data);
-    }
 
-    while (counter % Colcount != 0)
-    {
-        counter++;
-        bmkTable.AddCell(SetUpCell(cellheight, cellWidth, string.Empty));
     }
-
     FinishTable(0);
 
     //set to 1 for full last row
     void FinishTable(int subtract)
     {
+        for (int y = 0; y < heightTracker.GetLength(1); y++)
+        {
+            int fullRow = 0;
+            bool minOneItem = false;
+            for (int x = 0; x < heightTracker.GetLength(0); x++)
+            {
+                if (heightTracker[x, y] != 0)
+                {
+                    fullRow++;
+                    minOneItem = true;
+                }
+            }
+            if ((fullRow != Colcount) && minOneItem)
+            {
+                for (int x = 0; x < heightTracker.GetLength(0); x++)
+                {
+                    if (heightTracker[x, y] == 0)
+                    {
+                        heightTracker[x, y] = 1;
+                        bmkTable.AddCell(SetUpCell(cellheight, cellWidth, string.Empty));
+                    }
+                }
+            }
+        }
+
         var canvas = new PdfCanvas(page);
         float stroke = bmkTable.GetStrokeWidth() ?? 1;
         float width = bmkTable.GetNumberOfColumns() * mmToPt(cellWidth + stroke);
@@ -1072,7 +1108,7 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
         int sizer = 1;
         if (key.Contains('\n'))
         {
-            sizer += (int)MathF.Round(key.Where(c => c == '\n').ToArray().Length / 1.25f);
+            sizer += (int)MathF.Round(key.Count('\n') / 1.25f);
         }
         Cell data = new(sizer, 1);
         data.SetPadding(0);
@@ -1098,12 +1134,14 @@ void AddBMKAsTable(IEnumerable<string> BMKs, PdfDocument pdf, Document document,
 
     void ResetTable()
     {
-        for (int i = 0; i < heightTracker.Length; i++)
-        {
-            heightTracker[i] = 0;
-        }
-        counter = 0;
         FinishTable(1);
+        for (int x = 0; x < heightTracker.GetLength(0); x++)
+        {
+            for (int y = 0; y < heightTracker.GetLength(1); y++)
+            {
+                heightTracker[x, y] = 0;
+            }
+        }
         pageNumber++;
         _ = pdf.AddNewPage();
         page = pdf.GetPage(pageNumber);
@@ -1159,7 +1197,6 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
                 File.WriteAllText(outputPath, sb.ToString());
                 sb.Clear();
 
-
                 outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[(int)MathF.Min(fileIter, matNumbers.Count - 1)]}-" : string.Empty)}BMK-{fileCounter++}.csv");
             }
         }
@@ -1175,14 +1212,17 @@ string ExportToCSV(string pdfPath, List<List<string>> bMKs)
                 }
             }
             counter = 0;
-            if (sb[^1] != '\n')
+            if (sb.Length > 0)
             {
-                sb.Append('\n');
-            }
-            File.WriteAllText(outputPath, sb.ToString());
-            sb.Clear();
+                if (sb[^1] != '\n')
+                {
+                    sb.Append('\n');
+                }
+                File.WriteAllText(outputPath, sb.ToString());
+                sb.Clear();
 
-            outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[(int)MathF.Min(fileIter + 1, matNumbers.Count - 1)]}-" : string.Empty)}BMK-{fileCounter++}.csv");
+                outputPath = Path.Combine(localDir, $"{orderNumber}-Hydraulik-{(flagG ? $"{matNumbers[(int)MathF.Min(fileIter + 1, matNumbers.Count - 1)]}-" : string.Empty)}BMK-{fileCounter++}.csv");
+            }
         }
     }
     if (flagG)
