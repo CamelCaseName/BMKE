@@ -96,7 +96,7 @@ void PutHelp()
 {
     Console.WriteLine(
 """
-#### BMKE - Tool to generate BMK from a KraussMaffei Hydraulic schematic for all special additions on the platens, fixed and moving####
+#### BMKE v1- Tool to generate BMK from a KraussMaffei MX Hydraulic schematic for all special additions on the platens, fixed and moving ("BLOCKABRUF" in site name)####
 A csv with all BMK is generated at the same path as the hydraulic schematic every time.
 
 When starting via command line, you can provide the path to the hydraulic schematic as the first argument.
