@@ -29,7 +29,7 @@ while (true)
     int Rowcount = 14;
     bool flagP = false; //done
     bool flagU = false; //done
-    bool flagC = false; //todo
+    bool flagC = false; //in progress
     bool flagG = false; //done
     bool flagS = false; //done
 
@@ -105,12 +105,12 @@ while (true)
     {
         Console.WriteLine(
     """
-#### BMKE v1- Tool to generate BMK from a KraussMaffei MX Hydraulic schematic for all special additions on the platens, fixed and moving ("BLOCKABRUF" in site name)####
+#### BMKE v1.1- Tool to generate BMK from a KraussMaffei MX Hydraulic schematic for all special additions on the platens, fixed and moving ("BLOCKABRUF" in site name)####
 A csv with all BMK is generated at the same path as the hydraulic schematic every time.
 
 When starting via command line, you can provide the path to the hydraulic schematic as the first argument.
 The following flags are also available:
-    -p  | generate a pdf version of the resulting BMK directly, alongside the csv.
+    -p  | generate a pdf version of the resulting BMK directly, alongside the csv. (Uses isofonft from this project here under lgplv3+fe: https://github.com/hikikomori82/osifont)
     -g  | group BMK by schematic page.
     -s  | appends a page to the pdf/continues the csv instead of splitting into a new file once a the table on the current page is full.
     -u  | unsorted, does not alphabetically sort the valve names.
@@ -213,6 +213,7 @@ The following flags are also available:
 
             if (CheckFileIsValid(candidate))
             {
+                //todo add check that we dont place cursor too far down if too far down already
                 Console.SetCursorPosition(0, Console.GetCursorPosition().Top + 1);
                 //now ask for flags
                 Console.WriteLine("Do you want to set flags? [y] for yes, [enter] or [n] for no");
@@ -446,6 +447,7 @@ The following flags are also available:
         //M for cylinders/motors
         //N for NG valve size
         char[] disallowedChars = ['A', 'P', 'G', 'T', 'L', 'M', 'N', 'H', 'W'];
+        //todo add second list with disallowed combinations or certain values, like WU01, HB01, BG600, BGxxx, etc
 
         foreach (var lines in Alllines)
         {
@@ -558,6 +560,7 @@ The following flags are also available:
             CheckAndReplacePullOffCylinder(file, false);
             //todo maybe possible for mold coupling?
             //todo maybe possible for stäubli mold clamps?
+            //todo simple ejector stack
         }
         return BMKs;
 
@@ -1011,12 +1014,13 @@ The following flags are also available:
             document.Add(new Paragraph($"BMK fuer Blockabruf,BWAP und Blockabruf,FWAP [Auftrag: {orderNumber}] {(flagG ? $"[Material: {matNumbers[Groupcounter]}]" : string.Empty)}"));
             if (flagC)
             {
-                document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen. \nMehrfachaufkleber sind ein vielfaches hoch, aber gleich breit. 2 Zeilen: 18mm | 3 Zeilen: 27mm | 4 Zeilen 27mm | 5 Zeilen: 36mm"));
+                document.Add(new Paragraph($"jeweils auf {cellWidth}x{cellheight} schneiden, einzeln austrennen. \nMehrfachaufkleber sind ein vielfaches hoch, aber gleich breit. 2 Zeilen: 18mm | 3-4 Zeilen 27mm | 5-6 Zeilen: 36mm"));
             }
             else
             {
-                document.Add(new Paragraph($"jeweils {cellWidth}x{cellheight}mm, einzeln austrennen."));
+                document.Add(new Paragraph($"jeweils auf {cellWidth}x{cellheight} schneiden, einzeln austrennen."));
             }
+            document.Add(new Paragraph($"M 1:1 Untergrund: schwarz - Schrift: weiß - Werkstoff: Laserscriptfolie - Roht.-Nr.: 0754681"));
         }
     }
 
@@ -1121,7 +1125,9 @@ The following flags are also available:
             int sizer = 1;
             if (key.Contains('\n'))
             {
-                sizer += (int)MathF.Round(key.Count('\n') / 1.25f);
+                //todo add lookup so we get the following size inrease:
+                // 0-1 1-2 2-3 3-3 4-4 5-4 6-5 7-5
+                sizer += (int)MathF.Round(key.Count('\n') / 1.35f);
             }
             Cell data = new(sizer, 1);
             data.SetPadding(0);
